@@ -140,5 +140,13 @@ $$|\psi_{k+1}\rangle \propto (1-\alpha)\,e^{-iA_\text{pro}\,\delta t}|\psi_k\ran
 
 ## Related Work
 
-- Saarinen et al. (2024). [Disease gene prioritization with quantum walks.](https://academic.oup.com/bioinformatics/article/40/8/btae513/7738783) *Bioinformatics.*
-- Dubovitskii et al. (2025). [On Quantum Random Walks in Biomolecular Networks.](https://arxiv.org/abs/2506.06514) *arXiv.*
+**Quantum walk methods:**
+- Saarinen et al. (2024). [Disease gene prioritization with quantum walks.](https://academic.oup.com/bioinformatics/article/40/8/btae513/7738783) *Bioinformatics* 40(8): btae513.
+- Dubovitskii et al. (2025). [On Quantum Random Walks in Biomolecular Networks.](https://arxiv.org/abs/2506.06514) *arXiv:* 2506.06514.
+
+**Metabolite–disease prioritization (baselines & related):**
+- Shang et al. (2014). [Prioritizing Candidate Disease Metabolites Based on Global Functional Relationships between Metabolites in the Context of Metabolic Pathways.](https://doi.org/10.1371/journal.pone.0104934) *PLoS ONE* 9(8): e104934. *(PROFANCY)*
+- Yao et al. (2015). [Global Prioritization of Disease Candidate Metabolites Based on a Multi-omics Composite Network.](https://doi.org/10.1038/srep17201) *Scientific Reports* 5: 17201. *(MetPriCNet)*
+- Ma Y & Ma Y (2022). [Hypergraph-based logistic matrix factorization for metabolite–disease interaction prediction.](https://doi.org/10.1093/bioinformatics/btab652) *Bioinformatics* 38(2): 435–443. *(HGLMF)*
+- Zhao et al. (2023). [Metabolite-disease interaction prediction based on logistic matrix factorization and local neighborhood constraints.](https://doi.org/10.3389/fpsyt.2023.1149947) *Frontiers in Psychiatry* 14: 1149947.
+- Lu et al. (2025). [Enhanced metabolite-disease associations prediction via Neighborhood Aggregation Graph Transformer with Kolmogorov–Arnold Networks.](https://doi.org/10.1016/j.jocs.2025.102629) *Journal of Computational Science* 90: 102629. *(AGKphormer)*
