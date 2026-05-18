@@ -134,7 +134,7 @@ $$|\psi_{k+1}\rangle \propto (1-\alpha)\,e^{-iA_\text{pro}\,\delta t}|\psi_k\ran
   title   = {CTQW-PRO: Quantum Walk-Based Metabolite–Disease Prioritization},
   author  = {...},
   journal = {...},
-  year    = {2025}
+  year    = {2026}
 }
 ```
 
