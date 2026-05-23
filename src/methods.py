@@ -212,3 +212,70 @@ def build_psi_batch(seed_idx_list, N_PRO, device):
         nr = 1.0 / (len(sidx) ** 0.5)
         for si in sidx: psi[b, si] = nr
     return psi
+
+
+# ── Non-Hermitian walk trên G_pro ─────────────────────────────────────────────
+
+def make_nh_pro(A_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst,
+                cofactors, pro_nodes, gamma, t=T_FIXED):
+    """
+    Non-Hermitian quantum walk: H_eff = A_pro - i*gamma*diag(cofactor_vec)
+    cofactor decay tại cofactor nodes → walker bị "hút" ra khỏi cofactors.
+    gamma = mean_degree (≈22) theo grid search.
+
+    Returns run_nh(seed_nodes) → scores (N,).
+    """
+    import numpy as np
+
+    # Build cofactor_vec — thứ tự theo pro_nodes (match idx_pro)
+    cof_set = set(cofactors)
+    cof_vec = np.array([
+        1.0 if (nd in cof_set or
+                nd.replace('_c','').replace('_m','').replace('_e','') in cof_set)
+        else 0.0
+        for nd in pro_nodes
+    ], dtype=float)
+
+    H_eff = A_pro.astype(complex) - 1j * gamma * np.diag(cof_vec)
+    eigvals_nh, V_nh = np.linalg.eig(H_eff)
+    V_inv_nh        = np.linalg.inv(V_nh)
+    phases_nh       = np.exp(-1j * eigvals_nh * t)
+
+    _N        = N
+    _N_PRO    = N_PRO
+    _idx_pro  = idx_pro
+    _pro_src_ = _pro_src
+    _pro_dst_ = _pro_dst
+
+    def run_nh(seed_nodes, _n=_N):
+        valid = [_idx_pro[s] for s in seed_nodes if s in _idx_pro]
+        if not valid: return np.zeros(_n)
+        psi0 = np.zeros(_N_PRO, dtype=complex)
+        psi0[valid] = 1.0 / np.sqrt(len(valid))
+        psi_t = V_nh @ (phases_nh * (V_inv_nh @ psi0))
+        probs = np.abs(psi_t) ** 2   # không normalize — decay là tín hiệu thực
+        sc = np.zeros(_n)
+        sc[_pro_dst_] = probs[_pro_src_]
+        return sc
+
+    return run_nh
+
+
+# ── Reciprocal Rank Fusion ─────────────────────────────────────────────────────
+
+def make_rrf(fn_a, fn_b, k=60):
+    """
+    RRF(fn_a, fn_b): fuses two scoring functions via reciprocal rank.
+    score_rrf(j) = 1/(k + rank_a(j)) + 1/(k + rank_b(j))
+    k=60 is standard RRF default (Cormack et al., 2009).
+    """
+    from scipy.stats import rankdata as _rankdata
+
+    def run_rrf(seed_nodes):
+        sa = fn_a(seed_nodes)
+        sb = fn_b(seed_nodes)
+        ra = _rankdata(-sa, method='average')
+        rb = _rankdata(-sb, method='average')
+        return 1.0 / (k + ra) + 1.0 / (k + rb)
+
+    return run_rrf

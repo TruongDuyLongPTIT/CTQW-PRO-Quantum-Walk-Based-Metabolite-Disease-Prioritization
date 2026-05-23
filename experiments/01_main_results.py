@@ -17,6 +17,7 @@ import networkx as nx
 from config import (
     RESULTS_DIR, CACHE_DIR,
     T_FIXED, RWR_ALPHA, DRIVEN_N_STEPS, DRIVEN_ALPHA,
+    NH_GAMMA, RRF_K,
     RECON3D_COFACTORS, COFACTORS_FALLBACK,
     MIN_METS, METRIC_KEYS_FULL,
     SMPDB_MET_DIR, SMPDB_PW_DIR,
@@ -33,6 +34,7 @@ from eval_sets import (
 )
 from methods import (
     run_rwr, make_profancy, make_ctqw_pro, make_ctqw_gcc,
+    make_nh_pro, make_rrf,
     build_gpu_methods, build_psi_batch,
 )
 from evaluation import (
@@ -230,6 +232,53 @@ else:
         all_t3[label] = {'t=0.1': df_c,
                           f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}': df_dr}
 
+
+# ═══════════════════════════════════════════════════════════════
+# TABLE 4 — NH γ=22 & RRF (G_pro)
+# NH: Non-Hermitian walk — decay tại cofactor nodes
+# RRF: Reciprocal Rank Fusion (NH + Driven)
+# ═══════════════════════════════════════════════════════════════
+print('\n[Table 4] NH γ=22 & RRF...')
+
+# NH eigendecomp — chậm (~30s), cache lại
+print(f'  Building NH eigendecomp (γ={NH_GAMMA})...', end=' ', flush=True)
+t0_nh = time.time()
+run_nh = make_nh_pro(
+    A_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst,
+    RECON3D_COFACTORS, pro_nodes, NH_GAMMA, T_FIXED)
+print(f'{time.time()-t0_nh:.1f}s')
+
+# RRF = NH + Driven (CPU driven fn)
+_driven_cpu_fn = lambda seeds: all_t3.get('SMPDB', {})   # placeholder
+# Build CPU driven để dùng trong RRF (GPU driven không trả về numpy trực tiếp)
+def _driven_cpu(seeds, _n=N):
+    valid_idx = [idx_pro[s] for s in seeds if s in idx_pro]
+    if not valid_idx: return np.zeros(_n)
+    psi0 = np.zeros(N_PRO, dtype=complex)
+    psi0[valid_idx] = 1.0 / np.sqrt(len(valid_idx))
+    phases = np.exp(-1j * Apro_eigvals * T_FIXED)
+    psi = psi0.copy()
+    for _ in range(DRIVEN_N_STEPS):
+        coef = Apro_eigvecs.conj().T @ psi
+        psi  = (1 - DRIVEN_ALPHA) * (Apro_eigvecs @ (phases * coef)) + DRIVEN_ALPHA * psi0
+        nrm  = np.linalg.norm(psi)
+        if nrm > 1e-9: psi /= nrm
+    sc = np.zeros(_n); sc[_pro_dst] = (np.abs(psi)**2)[_pro_src]
+    return sc
+
+run_rrf = make_rrf(run_nh, _driven_cpu, k=RRF_K)
+
+all_t4 = {}
+for label, dset in [('HMDB+CTD', eval_set1),
+                     ('MarkerDB', eval_set2),
+                     ('SMPDB',    eval_set3)]:
+    t0 = time.time()
+    df_nh  = run_loo_eval(dset, run_nh,  node_idx, N, label=f'NH/{label}')
+    df_rrf = run_loo_eval(dset, run_rrf, node_idx, N, label=f'RRF/{label}')
+    all_t4[label] = {'CTQW-PRO': all_t2[label]['t=0.1'],
+                     f'NH γ={NH_GAMMA}': df_nh, 'RRF': df_rrf}
+    print(f'  {label}: {(time.time()-t0)/60:.1f} min')
+
 # ═══════════════════════════════════════════════════════════════
 # STEP 5 — Print results
 # ═══════════════════════════════════════════════════════════════
@@ -302,7 +351,8 @@ print('\nSaving...')
 all_rows = []
 for tname, results in [('table1', all_t1),
                         ('table2', all_t2),
-                        ('table3', all_t3)]:
+                        ('table3', all_t3),
+                        ('table4', all_t4)]:
     for label, res in results.items():
         for mname, df in res.items():
             if df is None or df.empty: continue
@@ -319,5 +369,23 @@ if wx_rows:
     out2 = RESULTS_DIR / 'wilcoxon_results.csv'
     pd.concat(wx_rows, ignore_index=True).to_csv(out2, index=False)
     print(f'  Saved: {out2}')
+
+
+print('\n' + '='*72)
+print('TABLE 4: CTQW-PRO vs NH vs RRF (G_pro)')
+for label in ['HMDB+CTD','MarkerDB','SMPDB']:
+    print_results_table(all_t4[label], label,
+                        method_order=['CTQW-PRO', f'NH γ={NH_GAMMA}', 'RRF'])
+
+print('\nWILCOXON: NH & RRF vs CTQW-PRO')
+for label in ['HMDB+CTD','MarkerDB','SMPDB']:
+    df_c   = all_t2[label].get('t=0.1')
+    df_nh  = all_t4[label].get(f'NH γ={NH_GAMMA}')
+    df_rrf = all_t4[label].get('RRF')
+    if df_c is None: continue
+    if df_nh  is not None:
+        wilcoxon_table(df_nh,  df_c, label, method_a=f'NH γ={NH_GAMMA}', method_b='CTQW-PRO')
+    if df_rrf is not None:
+        wilcoxon_table(df_rrf, df_c, label, method_a='RRF', method_b='CTQW-PRO')
 
 print('Done.')

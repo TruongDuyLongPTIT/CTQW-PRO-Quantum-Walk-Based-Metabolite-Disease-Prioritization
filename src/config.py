@@ -18,6 +18,8 @@ SMPDB_MET_DIR = BASE_DIR / 'smpdb_metabolites.csv'
 SMPDB_PW_DIR  = BASE_DIR / 'smpdb_pathways.csv'
 
 T_FIXED     = 0.1
+NH_GAMMA    = 22.0   # mean_degree G_pro — từ grid search
+RRF_K       = 60     # Cormack et al. 2009 default
 RWR_ALPHA   = 0.85
 RWR_TOL     = 1e-8
 RWR_MAXITER = 200
