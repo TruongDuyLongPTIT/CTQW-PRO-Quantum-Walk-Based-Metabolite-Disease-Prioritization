@@ -30,11 +30,10 @@ from eval_sets import (
 )
 from methods import (
     run_rwr, make_profancy, make_ctqw_pro, make_ctqw_gcc,
-    make_nh_pro, make_rrf,
-    build_gpu_methods, build_psi_batch,
+    make_nh_pro, make_rrf, make_driven_pro,
 )
 from evaluation import (
-    run_loo_eval, run_driven_eval,
+    run_loo_eval,
     wilcoxon_table, bootstrap_ci, win_counts,
     print_results_table,
 )
@@ -111,18 +110,6 @@ Acc_eigvals, Acc_eigvecs   = compute_eigendecomp(
     A_cc, CACHE_DIR / 'gcc_eigdecomp.npz')
 print('  Done.')
 
-# ═══════════════════════════════════════════════════════════════
-# STEP 4 — GPU setup
-# ═══════════════════════════════════════════════════════════════
-try:
-    import torch
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f'\n  Device: {device}')
-    if torch.cuda.is_available():
-        print(f'  GPU: {torch.cuda.get_device_name(0)}')
-    gpu_ok = True
-except ImportError:
-    gpu_ok = False
 
 # ═══════════════════════════════════════════════════════════════
 # TABLE 1 — RWR vs CTQW on G_cc  [FIRST: simpler, establishes baseline]
@@ -201,62 +188,23 @@ for label, dset in [('HMDB+CTD', eval_set1),
 # ═══════════════════════════════════════════════════════════════
 print('\n[Table 4] Driven CTQW-PRO & RRF...')
 
-# driven_name dùng chung cho cả GPU và CPU path
-driven_name = f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}'
-
-# Build CPU driven để dùng trong RRF
-def _driven_cpu(seeds, _n=N):
-    valid_idx = [idx_pro[s] for s in seeds if s in idx_pro]
-    if not valid_idx: return np.zeros(_n)
-    psi0 = np.zeros(N_PRO, dtype=complex)
-    psi0[valid_idx] = 1.0 / np.sqrt(len(valid_idx))
-    phases = np.exp(-1j * Apro_eigvals * T_FIXED)
-    psi = psi0.copy()
-    for _ in range(DRIVEN_N_STEPS):
-        coef = Apro_eigvecs.conj().T @ psi
-        psi  = (1 - DRIVEN_ALPHA) * (Apro_eigvecs @ (phases * coef)) + DRIVEN_ALPHA * psi0
-        nrm  = np.linalg.norm(psi)
-        if nrm > 1e-9: psi /= nrm
-    sc = np.zeros(_n); sc[_pro_dst] = (np.abs(psi)**2)[_pro_src]
-    return sc
-
-run_rrf = make_rrf(run_nh, _driven_cpu, k=RRF_K)
+driven_name  = f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}'
+run_driven   = make_driven_pro(
+    Apro_eigvals, Apro_eigvecs, idx_pro, N, N_PRO, _pro_src, _pro_dst)
+run_rrf      = make_rrf(run_nh, run_driven, k=RRF_K)
 
 all_t4 = {}
-if gpu_ok:
-    gpu_fns = build_gpu_methods(
-        Apro_eigvals, Apro_eigvecs, _pro_src, _pro_dst, N, N_PRO,
-        device=device, t=T_FIXED, n_steps=DRIVEN_N_STEPS, alpha=DRIVEN_ALPHA)
-
-    def _build_psi(sidx_list):
-        return build_psi_batch(sidx_list, N_PRO, device)
-
-    methods_list_t4 = [
-        (f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}', gpu_fns['driven']),
-    ]
-
-    for label, dset in [('HMDB+CTD', eval_set1),
-                         ('MarkerDB', eval_set2),
-                         ('SMPDB',    eval_set3)]:
-        t0  = time.time()
-        res = run_driven_eval(
-            dset, methods_list_t4, node_idx, idx_pro, N, N_PRO,
-            _build_psi, batch_size=32, label=label)
-        df_driven = res.get(f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}')
-        df_rrf    = run_loo_eval(dset, run_rrf, node_idx, N, label=f'RRF/{label}')
-        all_t4[label] = {'CTQW-PRO': all_t2[label]['t=0.1'],
-                         driven_name: df_driven, 'RRF': df_rrf}
-        print(f'  {label}: {(time.time()-t0)/60:.1f} min')
-else:
-    for label, dset in [('HMDB+CTD', eval_set1),
-                         ('MarkerDB', eval_set2),
-                         ('SMPDB',    eval_set3)]:
-        t0 = time.time()
-        df_driven = run_loo_eval(dset, _driven_cpu, node_idx, N, label=f'Driven/{label}')
-        df_rrf    = run_loo_eval(dset, run_rrf,     node_idx, N, label=f'RRF/{label}')
-        all_t4[label] = {'CTQW-PRO': all_t2[label]['t=0.1'],
-                         driven_name: df_driven, 'RRF': df_rrf}
-        print(f'  {label}: {(time.time()-t0)/60:.1f} min')
+for label, dset in [('HMDB+CTD', eval_set1),
+                     ('MarkerDB', eval_set2),
+                     ('SMPDB',    eval_set3)]:
+    t0 = time.time()
+    df_driven = run_loo_eval(dset, run_driven, node_idx, N,
+                             label=f'Driven/{label}')
+    df_rrf    = run_loo_eval(dset, run_rrf,    node_idx, N,
+                             label=f'RRF/{label}')
+    all_t4[label] = {'CTQW-PRO': all_t2[label]['t=0.1'],
+                     driven_name: df_driven, 'RRF': df_rrf}
+    print(f'  {label}: {(time.time()-t0)/60:.1f} min')
 
 # ═══════════════════════════════════════════════════════════════
 # STEP 5 — Print results
