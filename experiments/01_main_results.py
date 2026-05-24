@@ -201,6 +201,9 @@ for label, dset in [('HMDB+CTD', eval_set1),
 # ═══════════════════════════════════════════════════════════════
 print('\n[Table 4] Driven CTQW-PRO & RRF...')
 
+# driven_name dùng chung cho cả GPU và CPU path
+driven_name = f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}'
+
 # Build CPU driven để dùng trong RRF
 def _driven_cpu(seeds, _n=N):
     valid_idx = [idx_pro[s] for s in seeds if s in idx_pro]
