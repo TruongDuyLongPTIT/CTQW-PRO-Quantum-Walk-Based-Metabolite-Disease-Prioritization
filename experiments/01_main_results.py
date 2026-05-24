@@ -2,7 +2,7 @@
 01_main_results.py — Main experiment.
 Table 1: CTQW vs RWR (G_cc)    [chạy trước]
 Table 2: CTQW-PRO vs PROFANCY (G_pro)
-Table 3: Driven CTQW-PRO vs CTQW-PRO
+Table 3: NH-CTQW-PRO vs CTQW-PRO
 
 Closely follows notebook Cell 7 (LOO) and Cell 8 (stats).
 """
@@ -12,16 +12,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
 import numpy as np
 import pandas as pd
-import networkx as nx
 
 from config import (
-    RESULTS_DIR, CACHE_DIR,
+    RESULTS_DIR, CACHE_DIR, RANDOM_SEED,
     T_FIXED, RWR_ALPHA, DRIVEN_N_STEPS, DRIVEN_ALPHA,
     NH_GAMMA, RRF_K,
-    RECON3D_COFACTORS, COFACTORS_FALLBACK,
-    MIN_METS, METRIC_KEYS_FULL,
-    SMPDB_MET_DIR, SMPDB_PW_DIR,
-    PATH_SMPDB_PW, PATH_SMPDB_MET,
+    RECON3D_COFACTORS,
 )
 from graph import (
     parse_recon3d, build_gcc, build_gpro,
@@ -52,7 +48,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 print('='*60); print('STEP 1 — Build graph')
 
 recon_data   = parse_recon3d()
-G_cc, graph_nodes, N, node_idx, A_cc, degrees = build_gcc(recon_data)
+G_cc, _, N, node_idx, A_cc, _ = build_gcc(recon_data)
 met_info     = recon_data['met_info']
 pathway_mets = recon_data['pathway_mets']
 
@@ -175,70 +171,9 @@ for label, dset in [('HMDB+CTD', eval_set1),
     print(f'  {label}: {(time.time()-t0)/60:.1f} min')
 
 # ═══════════════════════════════════════════════════════════════
-# TABLE 3 — Driven CTQW-PRO (GPU)
+# TABLE 3 — NH-CTQW-PRO
 # ═══════════════════════════════════════════════════════════════
-print('\n[Table 3] Driven CTQW-PRO...')
-
-all_t3 = {}
-if gpu_ok:
-    gpu_fns = build_gpu_methods(
-        Apro_eigvals, Apro_eigvecs, _pro_src, _pro_dst, N, N_PRO,
-        device=device, t=T_FIXED, n_steps=DRIVEN_N_STEPS, alpha=DRIVEN_ALPHA)
-
-    def _build_psi(sidx_list):
-        return build_psi_batch(sidx_list, N_PRO, device)
-
-    # methods_list format: [(name, fn), ...] — exact từ notebook Cell 9
-    methods_list = [
-        ('t=0.1',          gpu_fns['ctqw_pro']),
-        (f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}', gpu_fns['driven']),
-    ]
-
-    for label, dset in [('HMDB+CTD', eval_set1),
-                         ('MarkerDB', eval_set2),
-                         ('SMPDB',    eval_set3)]:
-        t0  = time.time()
-        res = run_driven_eval(
-            dset, methods_list, node_idx, idx_pro, N, N_PRO,
-            _build_psi, batch_size=32, label=label)
-        all_t3[label] = res
-        print(f'  {label}: {(time.time()-t0)/60:.1f} min')
-else:
-    # CPU fallback for driven (no GPU)
-    for label, dset in [('HMDB+CTD', eval_set1),
-                         ('MarkerDB', eval_set2),
-                         ('SMPDB',    eval_set3)]:
-        from methods import _ctqw_batch_raw
-        def _driven_cpu(seeds, _n=N):
-            from config import DRIVEN_N_STEPS as ns, DRIVEN_ALPHA as al
-            valid_idx = [idx_pro[s] for s in seeds if s in idx_pro]
-            if not valid_idx: return np.zeros(_n)
-            psi_seed = np.zeros(N_PRO, dtype=complex)
-            norm = 1.0 / np.sqrt(len(valid_idx))
-            for idx in valid_idx: psi_seed[idx] = norm
-            phases = np.exp(-1j * Apro_eigvals * T_FIXED)
-            psi = psi_seed.copy()
-            for _ in range(ns):
-                coef   = Apro_eigvecs.conj().T @ psi
-                walked = Apro_eigvecs @ (phases * coef)
-                psi    = (1-al)*walked + al*psi_seed
-                nrm = np.linalg.norm(psi)
-                if nrm > 1e-9: psi = psi/nrm
-            sc = np.zeros(_n)
-            sc[_pro_dst] = (np.abs(psi)**2)[_pro_src]
-            return sc
-        df_dr = run_loo_eval(dset, _driven_cpu, node_idx, N, label=f'Driven/{label}')
-        df_c  = all_t2[label]['t=0.1']
-        all_t3[label] = {'t=0.1': df_c,
-                          f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}': df_dr}
-
-
-# ═══════════════════════════════════════════════════════════════
-# TABLE 4 — NH γ=22 & RRF (G_pro)
-# NH: Non-Hermitian walk — decay tại cofactor nodes
-# RRF: Reciprocal Rank Fusion (NH + Driven)
-# ═══════════════════════════════════════════════════════════════
-print('\n[Table 4] NH γ=22 & RRF...')
+print('\n[Table 3] NH-CTQW-PRO...')
 
 # NH eigendecomp — chậm (~30s), cache lại
 print(f'  Building NH eigendecomp (γ={NH_GAMMA})...', end=' ', flush=True)
@@ -248,9 +183,25 @@ run_nh = make_nh_pro(
     RECON3D_COFACTORS, pro_nodes, NH_GAMMA, T_FIXED)
 print(f'{time.time()-t0_nh:.1f}s')
 
-# RRF = NH + Driven (CPU driven fn)
-_driven_cpu_fn = lambda seeds: all_t3.get('SMPDB', {})   # placeholder
-# Build CPU driven để dùng trong RRF (GPU driven không trả về numpy trực tiếp)
+all_t3 = {}
+for label, dset in [('HMDB+CTD', eval_set1),
+                     ('MarkerDB', eval_set2),
+                     ('SMPDB',    eval_set3)]:
+    t0 = time.time()
+    df_nh  = run_loo_eval(dset, run_nh, node_idx, N, label=f'NH/{label}')
+    all_t3[label] = {'CTQW-PRO': all_t2[label]['t=0.1'],
+                     f'NH γ={NH_GAMMA}': df_nh}
+    print(f'  {label}: {(time.time()-t0)/60:.1f} min')
+
+
+# ═══════════════════════════════════════════════════════════════
+# TABLE 4 — Driven CTQW-PRO & RRF
+# Driven: seed reinforcement
+# RRF: Reciprocal Rank Fusion (NH + Driven)
+# ═══════════════════════════════════════════════════════════════
+print('\n[Table 4] Driven CTQW-PRO & RRF...')
+
+# Build CPU driven để dùng trong RRF
 def _driven_cpu(seeds, _n=N):
     valid_idx = [idx_pro[s] for s in seeds if s in idx_pro]
     if not valid_idx: return np.zeros(_n)
@@ -269,15 +220,40 @@ def _driven_cpu(seeds, _n=N):
 run_rrf = make_rrf(run_nh, _driven_cpu, k=RRF_K)
 
 all_t4 = {}
-for label, dset in [('HMDB+CTD', eval_set1),
-                     ('MarkerDB', eval_set2),
-                     ('SMPDB',    eval_set3)]:
-    t0 = time.time()
-    df_nh  = run_loo_eval(dset, run_nh,  node_idx, N, label=f'NH/{label}')
-    df_rrf = run_loo_eval(dset, run_rrf, node_idx, N, label=f'RRF/{label}')
-    all_t4[label] = {'CTQW-PRO': all_t2[label]['t=0.1'],
-                     f'NH γ={NH_GAMMA}': df_nh, 'RRF': df_rrf}
-    print(f'  {label}: {(time.time()-t0)/60:.1f} min')
+if gpu_ok:
+    gpu_fns = build_gpu_methods(
+        Apro_eigvals, Apro_eigvecs, _pro_src, _pro_dst, N, N_PRO,
+        device=device, t=T_FIXED, n_steps=DRIVEN_N_STEPS, alpha=DRIVEN_ALPHA)
+
+    def _build_psi(sidx_list):
+        return build_psi_batch(sidx_list, N_PRO, device)
+
+    methods_list_t4 = [
+        (f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}', gpu_fns['driven']),
+    ]
+
+    for label, dset in [('HMDB+CTD', eval_set1),
+                         ('MarkerDB', eval_set2),
+                         ('SMPDB',    eval_set3)]:
+        t0  = time.time()
+        res = run_driven_eval(
+            dset, methods_list_t4, node_idx, idx_pro, N, N_PRO,
+            _build_psi, batch_size=32, label=label)
+        df_driven = res.get(f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}')
+        df_rrf    = run_loo_eval(dset, run_rrf, node_idx, N, label=f'RRF/{label}')
+        all_t4[label] = {'CTQW-PRO': all_t2[label]['t=0.1'],
+                         driven_name: df_driven, 'RRF': df_rrf}
+        print(f'  {label}: {(time.time()-t0)/60:.1f} min')
+else:
+    for label, dset in [('HMDB+CTD', eval_set1),
+                         ('MarkerDB', eval_set2),
+                         ('SMPDB',    eval_set3)]:
+        t0 = time.time()
+        df_driven = run_loo_eval(dset, _driven_cpu, node_idx, N, label=f'Driven/{label}')
+        df_rrf    = run_loo_eval(dset, run_rrf,     node_idx, N, label=f'RRF/{label}')
+        all_t4[label] = {'CTQW-PRO': all_t2[label]['t=0.1'],
+                         driven_name: df_driven, 'RRF': df_rrf}
+        print(f'  {label}: {(time.time()-t0)/60:.1f} min')
 
 # ═══════════════════════════════════════════════════════════════
 # STEP 5 — Print results
@@ -294,11 +270,10 @@ for label in ['HMDB+CTD','MarkerDB','SMPDB']:
                         method_order=['PROFANCY','t=0.1'])
 
 print('\n' + '='*72)
-print('TABLE 3: CTQW-PRO vs Driven CTQW-PRO (G_pro)')
-driven_name = f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}'
+print('TABLE 3: CTQW-PRO vs NH-CTQW-PRO (G_pro)')
 for label in ['HMDB+CTD','MarkerDB','SMPDB']:
     print_results_table(all_t3[label], label,
-                        method_order=['t=0.1', driven_name])
+                        method_order=['CTQW-PRO', f'NH γ={NH_GAMMA}'])
 
 # ── Statistical analysis — exact từ notebook Cell 8 ──────────
 print('\n' + '='*72)
@@ -312,22 +287,31 @@ for label in ['HMDB+CTD','MarkerDB','SMPDB']:
                                method_a='CTQW-PRO', method_b='PROFANCY')
         if df_wx is not None: wx_rows.append(df_wx)
 
-print('\nWILCOXON: Driven vs CTQW-PRO (SMPDB)')
-df_c = all_t3.get('SMPDB', {}).get('t=0.1')
-df_d = all_t3.get('SMPDB', {}).get(driven_name)
-if df_c is not None and df_d is not None:
-    df_wx2 = wilcoxon_table(df_d, df_c, 'SMPDB',
-                             method_a='Driven', method_b='CTQW-PRO')
-    if df_wx2 is not None: wx_rows.append(df_wx2)
+print('\nWILCOXON: NH vs CTQW-PRO')
+for label in ['HMDB+CTD','MarkerDB','SMPDB']:
+    df_c  = all_t2[label].get('t=0.1')
+    df_nh = all_t3[label].get(f'NH γ={NH_GAMMA}')
+    if df_c is not None and df_nh is not None:
+        df_wx2 = wilcoxon_table(df_nh, df_c, label,
+                                method_a=f'NH γ={NH_GAMMA}', method_b='CTQW-PRO')
+        if df_wx2 is not None: wx_rows.append(df_wx2)
 
-# Bootstrap CI
+# Bootstrap CI — tất cả methods
 print('\n--- Bootstrap 95% CI ---')
-from config import RANDOM_SEED
 import numpy as np
+_datasets = ['HMDB+CTD','MarkerDB','SMPDB']
+_ci_sources = [
+    ('PROFANCY',              lambda l: all_t2[l].get('PROFANCY')),
+    ('CTQW-PRO',              lambda l: all_t2[l].get('t=0.1')),
+    (f'NH γ={NH_GAMMA}',     lambda l: all_t3[l].get(f'NH γ={NH_GAMMA}')),
+    ('Driven',                lambda l: all_t4[l].get(f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}')),
+    ('RRF',                   lambda l: all_t4[l].get('RRF')),
+]
 for met in ['auc','mrr','r@20']:
     print(f'\n  {met.upper()}:')
-    for label in ['HMDB+CTD','MarkerDB','SMPDB']:
-        for mname, df in all_t2[label].items():
+    for mname, get_df in _ci_sources:
+        for label in _datasets:
+            df = get_df(label)
             if df is None or df.empty: continue
             mean, lo, hi = bootstrap_ci(df, met)
             print(f'    {label:<10} {mname:<20} '
@@ -344,11 +328,36 @@ for label in ['HMDB+CTD','MarkerDB','SMPDB']:
               f'PROFANCY={w["PROFANCY"]}, tie={w["tie"]} '
               f'(n={w["n_shared"]})')
 
+
+print('\n' + '='*72)
+print('TABLE 4: CTQW-PRO vs Driven vs RRF (G_pro)')
+driven_name = f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}'
+for label in ['HMDB+CTD','MarkerDB','SMPDB']:
+    print_results_table(all_t4[label], label,
+                        method_order=['CTQW-PRO', driven_name, 'RRF'])
+
+print('\nWILCOXON: Driven & RRF vs CTQW-PRO')
+for label in ['HMDB+CTD','MarkerDB','SMPDB']:
+    df_c   = all_t2[label].get('t=0.1')
+    df_drv = all_t4[label].get(f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}')
+    df_rrf = all_t4[label].get('RRF')
+    if df_c is None: continue
+    if df_drv is not None:
+        df_wx3 = wilcoxon_table(df_drv, df_c, label,
+                                method_a='Driven', method_b='CTQW-PRO')
+        if df_wx3 is not None: wx_rows.append(df_wx3)
+    if df_rrf is not None:
+        df_wx4 = wilcoxon_table(df_rrf, df_c, label,
+                                method_a='RRF', method_b='CTQW-PRO')
+        if df_wx4 is not None: wx_rows.append(df_wx4)
+
 # ═══════════════════════════════════════════════════════════════
 # STEP 6 — Save
 # ═══════════════════════════════════════════════════════════════
 print('\nSaving...')
 all_rows = []
+# CTQW-PRO trong all_t3/all_t4 là alias của all_t2 → skip để tránh duplicate
+_skip = {'table3': {'CTQW-PRO'}, 'table4': {'CTQW-PRO'}}
 for tname, results in [('table1', all_t1),
                         ('table2', all_t2),
                         ('table3', all_t3),
@@ -356,6 +365,7 @@ for tname, results in [('table1', all_t1),
     for label, res in results.items():
         for mname, df in res.items():
             if df is None or df.empty: continue
+            if mname in _skip.get(tname, set()): continue
             d = df.copy()
             d['method'] = mname; d['source'] = label; d['table'] = tname
             all_rows.append(d)
@@ -370,22 +380,5 @@ if wx_rows:
     pd.concat(wx_rows, ignore_index=True).to_csv(out2, index=False)
     print(f'  Saved: {out2}')
 
-
-print('\n' + '='*72)
-print('TABLE 4: CTQW-PRO vs NH vs RRF (G_pro)')
-for label in ['HMDB+CTD','MarkerDB','SMPDB']:
-    print_results_table(all_t4[label], label,
-                        method_order=['CTQW-PRO', f'NH γ={NH_GAMMA}', 'RRF'])
-
-print('\nWILCOXON: NH & RRF vs CTQW-PRO')
-for label in ['HMDB+CTD','MarkerDB','SMPDB']:
-    df_c   = all_t2[label].get('t=0.1')
-    df_nh  = all_t4[label].get(f'NH γ={NH_GAMMA}')
-    df_rrf = all_t4[label].get('RRF')
-    if df_c is None: continue
-    if df_nh  is not None:
-        wilcoxon_table(df_nh,  df_c, label, method_a=f'NH γ={NH_GAMMA}', method_b='CTQW-PRO')
-    if df_rrf is not None:
-        wilcoxon_table(df_rrf, df_c, label, method_a='RRF', method_b='CTQW-PRO')
 
 print('Done.')
