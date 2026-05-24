@@ -1,6 +1,5 @@
 """
 graph.py — Build G_cc và G_pro từ Recon3D.
-Exact từ notebook Cell 2 và phần augmentation hmdb_to_recon trong Cell 3.
 """
 import json, pickle, re, time
 from collections import defaultdict
@@ -10,15 +9,15 @@ import networkx as nx
 import numpy as np
 
 from config import PATH_RECON3D, CACHE_DIR
-from utils import standardize_hmdb_id
+from utils import (standardize_hmdb_id,
+                   normalize_name, normalize_chem_aggressive, short_inchikey)
 
 
 # ── Parse Recon3D ─────────────────────────────────────────────────────────────
 
 def parse_recon3d(force=False):
     """
-    Parse Recon3D.json. Exact từ notebook Cell 2.
-    Returns: dict với G, met_info, rxn_info, pathway_mets, met_to_rxns, met_to_genes
+    Returns: dict với G, met_info, rxn_info, pathway_mets
     """
     cache_path = CACHE_DIR / 'recon3d_parsed_v2.pkl'
     if cache_path.exists() and not force:
@@ -67,8 +66,6 @@ def parse_recon3d(force=False):
 
     rxn_info     = {}
     pathway_mets = defaultdict(set)
-    met_to_rxns  = defaultdict(set)
-    met_to_genes = defaultdict(set)
 
     for rxn in recon.get('reactions', []):
         rid = rxn.get('id', '')
@@ -83,8 +80,6 @@ def parse_recon3d(force=False):
         sub = rxn.get('subsystem', 'Unknown')
         rxn_info[rid] = {'mets': base_mets, 'subsystem': sub, 'genes': genes}
         for mid in base_mets:
-            met_to_rxns[mid].add(rid)
-            met_to_genes[mid].update(genes)
             if sub and sub != 'Unknown': pathway_mets[sub].add(mid)
 
     edges = set()
@@ -102,8 +97,6 @@ def parse_recon3d(force=False):
     data = {
         'G': G, 'met_info': met_info, 'rxn_info': rxn_info,
         'pathway_mets': dict(pathway_mets),
-        'met_to_rxns':  dict(met_to_rxns),
-        'met_to_genes': dict(met_to_genes),
     }
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     with open(cache_path, 'wb') as f: pickle.dump(data, f)
@@ -118,8 +111,8 @@ def build_gcc(recon_data):
     G   = recon_data['G']
     ccs = sorted(nx.connected_components(G), key=len, reverse=True)
     G_cc        = G.subgraph(ccs[0]).copy()
-    graph_nodes = sorted(G_cc.nodes())   # protected name
-    N           = len(graph_nodes)       # protected name
+    graph_nodes = sorted(G_cc.nodes())
+    N           = len(graph_nodes)    
     node_idx    = {nd: i for i, nd in enumerate(graph_nodes)}
     A_cc        = nx.to_numpy_array(G_cc, nodelist=graph_nodes)
     degrees     = A_cc.sum(axis=1)
@@ -131,7 +124,6 @@ def build_gcc(recon_data):
 def build_hmdb_to_recon_initial(met_info, node_idx):
     """
     Initial mapping: HMDB IDs từ Recon3D annotations → Recon3D base IDs.
-    Exact từ notebook Cell 2 phần 'HMDB → Recon3D mapping'.
     """
     hmdb_to_recon = {}
     for base_id, info in met_info.items():
@@ -150,12 +142,10 @@ def augment_hmdb_to_recon(hmdb_to_recon, met_info, node_idx,
                            hmdb_name_to_id, hmdb_name_aggr_to_id):
     """
     Augment hmdb_to_recon với IK và name matching.
-    Exact từ notebook Cell 3 phần 'Augment hmdb_to_recon'.
     Modifies hmdb_to_recon in-place.
 
     Returns: (n_aug_ik, n_aug_nm)
     """
-    from utils import normalize_name, normalize_chem_aggressive, short_inchikey
     n_aug_ik = 0; n_aug_nm = 0
     mapped = set(hmdb_to_recon.values())
 
@@ -218,7 +208,6 @@ def build_gpro(G_cc, node_idx, pathway_mets):
 def compute_eigendecomp(A, cache_path=None, force=False):
     """
     numpy.linalg.eigh — symmetric matrix.
-    Exact từ notebook Cell 6/7.
     """
     if cache_path and Path(cache_path).exists() and not force:
         d = np.load(cache_path)
@@ -235,7 +224,7 @@ def compute_eigendecomp(A, cache_path=None, force=False):
 
 # ── Clean G_pro (cofactors removed) — for ablation study ─────────────────────
 
-def build_clean_gpro(G_pro, node_idx, pathway_mets, cofactors, met_info):
+def build_clean_gpro(G_pro, node_idx, pathway_mets, cofactors):
     """
     G_pro với RECON3D_COFACTORS removed.
     Dùng cho ablation study (02_ablation_graph.py).

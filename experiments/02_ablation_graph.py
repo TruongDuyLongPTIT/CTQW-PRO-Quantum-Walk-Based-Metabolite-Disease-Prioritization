@@ -31,7 +31,7 @@ pathway_mets = recon_data['pathway_mets']
 (G_pro_cln, pro_nodes_cln, N_PRO_CLN, idx_pro_cln,
  A_pro_cln, deg_pro_cln, _pro_src_cln, _pro_dst_cln,
  node_idx_cln, N_cln) = build_clean_gpro(
-    G_pro, node_idx, pathway_mets, RECON3D_COFACTORS, met_info)
+    G_pro, node_idx, pathway_mets, RECON3D_COFACTORS)
 
 print(f'  G_pro: {N_PRO} → clean: {N_PRO_CLN} nodes')
 
