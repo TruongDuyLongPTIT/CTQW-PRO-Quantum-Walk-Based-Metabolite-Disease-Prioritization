@@ -10,6 +10,12 @@
 Chạy trên Colab: path đã được set bởi Cell 0.
 Local: sys.path.insert(0, "<project>/src")
 """
+import sys
+from pathlib import Path
+_src = Path(__file__).resolve().parent.parent / 'src'
+if _src.exists() and str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
+
 import numpy as np
 import pandas as pd
 from collections import defaultdict
