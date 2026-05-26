@@ -42,18 +42,3 @@ def short_inchikey(ik: str) -> str:
         return ''
     parts = ik.split('-')
     return parts[0] if parts else ''
-
-
-def sig_stars(p: float) -> str:
-    """Convert p-value to significance stars."""
-    if p != p:  # nan
-        return 'n/a'
-    if p < 0.001:
-        return '***'
-    if p < 0.01:
-        return '**'
-    if p < 0.05:
-        return '*'
-    if p < 0.1:
-        return '.'
-    return 'ns'

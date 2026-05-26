@@ -28,7 +28,6 @@ DRIVEN_ALPHA   = 0.5
 
 MIN_METS    = 8      # notebook output = 8
 RANDOM_SEED = 42
-K_VALUES    = (5, 10, 20, 50)
 METRIC_KEYS_FULL = ['auc', 'mrr', 'rank', 'r@5', 'r@10', 'r@20', 'r@50']
 
 # Exact từ notebook Cell 3
