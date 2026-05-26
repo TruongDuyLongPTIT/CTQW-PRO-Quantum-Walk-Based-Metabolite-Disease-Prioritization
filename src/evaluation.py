@@ -92,65 +92,6 @@ def run_loo_eval(disease_set, method_fn, node_idx, N, label=''):
     return pd.DataFrame(rows) if rows else None
 
 
-# ── LOO evaluation (GPU batch) — exact từ notebook Cell 10 ───────────────────
-
-def run_driven_eval(disease_set, methods_list, node_idx, idx_pro,
-                    N, N_PRO, build_psi_fn,
-                    batch_size=32, label=''):
-    """
-    Exact từ notebook Cell 10 run_driven_eval().
-    methods_list: [(name, fn), ...] — fn(psi_batch) → scores_batch
-
-    Key differences from CPU LOO:
-    - loo_seeds: idx_pro indices (G_pro space) for psi construction
-    - loo_sset:  node_idx indices (G_cc space) for compute_metrics masking
-    - n_mets = len(valid) — per Cell 10 (NOT len(mets))
-    """
-    import torch
-    all_rows  = {name: [] for name, _ in methods_list}
-    t0 = time.time()
-
-    for disease, mets in tqdm(disease_set.items(), desc=label):
-        valid = [m for m in mets if m in node_idx]
-        if len(valid) < 3: continue
-
-        # Exact từ notebook Cell 10
-        loo_seeds, loo_test, loo_sset = [], [], []
-        for i, test_met in enumerate(valid):
-            seeds = [m for j, m in enumerate(valid) if j != i]
-            sidx  = [idx_pro[s] for s in seeds if s in idx_pro]
-            if not sidx: continue
-            loo_seeds.append(sidx)
-            loo_test.append(node_idx[test_met])
-            loo_sset.append({node_idx[s] for s in seeds if s in node_idx})
-        if not loo_seeds: continue
-
-        method_res = {name: [] for name, _ in methods_list}
-        for bs in range(0, len(loo_seeds), batch_size):
-            be    = min(bs + batch_size, len(loo_seeds))
-            psi_b = build_psi_fn(loo_seeds[bs:be])
-            for name, fn in methods_list:
-                with torch.no_grad():
-                    sc_np = fn(psi_b).cpu().numpy()
-                for b2 in range(be - bs):
-                    m = compute_metrics(sc_np[b2], loo_test[bs+b2],
-                                        loo_sset[bs+b2], _n=N)
-                    if m: method_res[name].append(m)
-
-        for name, _ in methods_list:
-            res = method_res[name]
-            if not res: continue
-            row = {k: float(np.mean([r[k] for r in res]))
-                   for k in METRIC_KEYS_FULL}
-            row['disease'] = disease
-            row['n_mets']  = len(valid)   # len(valid) per Cell 10
-            all_rows[name].append(row)
-
-    print(f'  {label}: {(time.time()-t0)/60:.1f} min')
-    return {name: pd.DataFrame(rows) if rows else None
-            for name, rows in all_rows.items()}
-
-
 # ── Wilcoxon — exact từ notebook Cell 8 wilcoxon_table() ────────────────────
 
 def wilcoxon_table(df_a, df_b, label,
