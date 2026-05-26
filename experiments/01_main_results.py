@@ -209,6 +209,7 @@ for label, dset in [('HMDB+CTD', eval_set1),
 # ═══════════════════════════════════════════════════════════════
 # STEP 5 — Print results
 # ═══════════════════════════════════════════════════════════════
+# ── Tables 1–4: kết quả số liệu liền nhau ────────────────────
 print('\n' + '='*72)
 print('TABLE 1: RWR vs CTQW (G_cc)')
 for label in ['HMDB+CTD','MarkerDB','SMPDB']:
@@ -226,10 +227,26 @@ for label in ['HMDB+CTD','MarkerDB','SMPDB']:
     print_results_table(all_t3[label], label,
                         method_order=['CTQW-PRO', f'NH γ={NH_GAMMA}'])
 
-# ── Statistical analysis — exact từ notebook Cell 8 ──────────
 print('\n' + '='*72)
-print('WILCOXON: CTQW-PRO vs PROFANCY')
+print('TABLE 4: CTQW-PRO vs Driven vs RRF (G_pro)')
+driven_name = f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}'
+for label in ['HMDB+CTD','MarkerDB','SMPDB']:
+    print_results_table(all_t4[label], label,
+                        method_order=['CTQW-PRO', driven_name, 'RRF'])
+
+# ── Statistical analysis ──────────────────────────────────────
+print('\n' + '='*72)
+print('WILCOXON: CTQW vs RWR')
 wx_rows = []
+for label in ['HMDB+CTD','MarkerDB','SMPDB']:
+    df_rwr  = all_t1[label].get('RWR')
+    df_ctqw = all_t1[label].get('CTQW')
+    if df_rwr is not None and df_ctqw is not None:
+        df_wx0 = wilcoxon_table(df_ctqw, df_rwr, label,
+                                method_a='CTQW', method_b='RWR')
+        if df_wx0 is not None: wx_rows.append(df_wx0)
+
+print('\nWILCOXON: CTQW-PRO vs PROFANCY')
 for label in ['HMDB+CTD','MarkerDB','SMPDB']:
     df_p = all_t2[label].get('PROFANCY')
     df_c = all_t2[label].get('t=0.1')
@@ -247,46 +264,6 @@ for label in ['HMDB+CTD','MarkerDB','SMPDB']:
                                 method_a=f'NH γ={NH_GAMMA}', method_b='CTQW-PRO')
         if df_wx2 is not None: wx_rows.append(df_wx2)
 
-# Bootstrap CI — tất cả methods
-print('\n--- Bootstrap 95% CI ---')
-import numpy as np
-_datasets = ['HMDB+CTD','MarkerDB','SMPDB']
-_ci_sources = [
-    ('PROFANCY',              lambda l: all_t2[l].get('PROFANCY')),
-    ('CTQW-PRO',              lambda l: all_t2[l].get('t=0.1')),
-    (f'NH γ={NH_GAMMA}',     lambda l: all_t3[l].get(f'NH γ={NH_GAMMA}')),
-    ('Driven',                lambda l: all_t4[l].get(f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}')),
-    ('RRF',                   lambda l: all_t4[l].get('RRF')),
-]
-for met in ['auc','mrr','r@20']:
-    print(f'\n  {met.upper()}:')
-    for mname, get_df in _ci_sources:
-        for label in _datasets:
-            df = get_df(label)
-            if df is None or df.empty: continue
-            mean, lo, hi = bootstrap_ci(df, met)
-            print(f'    {label:<10} {mname:<20} '
-                  f'{mean:.4f} [{lo:.4f},{hi:.4f}]  n={len(df)}')
-
-# Win counts
-print('\n--- Win counts (CTQW-PRO vs PROFANCY, AUC) ---')
-for label in ['HMDB+CTD','MarkerDB','SMPDB']:
-    df_p = all_t2[label].get('PROFANCY')
-    df_c = all_t2[label].get('t=0.1')
-    if df_p is not None and df_c is not None:
-        w = win_counts(df_c, df_p, 'auc')
-        print(f'  {label:<10}: CTQW-PRO={w["CTQW-PRO"]}, '
-              f'PROFANCY={w["PROFANCY"]}, tie={w["tie"]} '
-              f'(n={w["n_shared"]})')
-
-
-print('\n' + '='*72)
-print('TABLE 4: CTQW-PRO vs Driven vs RRF (G_pro)')
-driven_name = f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}'
-for label in ['HMDB+CTD','MarkerDB','SMPDB']:
-    print_results_table(all_t4[label], label,
-                        method_order=['CTQW-PRO', driven_name, 'RRF'])
-
 print('\nWILCOXON: Driven & RRF vs CTQW-PRO')
 for label in ['HMDB+CTD','MarkerDB','SMPDB']:
     df_c   = all_t2[label].get('t=0.1')
@@ -301,6 +278,61 @@ for label in ['HMDB+CTD','MarkerDB','SMPDB']:
         df_wx4 = wilcoxon_table(df_rrf, df_c, label,
                                 method_a='RRF', method_b='CTQW-PRO')
         if df_wx4 is not None: wx_rows.append(df_wx4)
+
+# Bootstrap CI — tất cả methods
+print('\n--- Bootstrap 95% CI ---')
+import numpy as np
+_datasets = ['HMDB+CTD','MarkerDB','SMPDB']
+_ci_sources = [
+    ('PROFANCY',          lambda l: all_t2[l].get('PROFANCY')),
+    ('CTQW-PRO',          lambda l: all_t2[l].get('t=0.1')),
+    (f'NH γ={NH_GAMMA}', lambda l: all_t3[l].get(f'NH γ={NH_GAMMA}')),
+    ('Driven',            lambda l: all_t4[l].get(f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}')),
+    ('RRF',               lambda l: all_t4[l].get('RRF')),
+]
+for met in ['auc','mrr','r@20']:
+    print(f'\n  {met.upper()}:')
+    for mname, get_df in _ci_sources:
+        for label in _datasets:
+            df = get_df(label)
+            if df is None or df.empty: continue
+            mean, lo, hi = bootstrap_ci(df, met)
+            print(f'    {label:<10} {mname:<20} '
+                  f'{mean:.4f} [{lo:.4f},{hi:.4f}]  n={len(df)}')
+
+# Win counts — all main method pairs, metrics: auc + mrr
+_win_pairs = [
+    ('CTQW',    lambda l: all_t1[l].get('CTQW'),
+     'RWR',     lambda l: all_t1[l].get('RWR')),
+    ('CTQW-PRO',lambda l: all_t2[l].get('t=0.1'),
+     'PROFANCY', lambda l: all_t2[l].get('PROFANCY')),
+    (f'NH γ={NH_GAMMA}', lambda l: all_t3[l].get(f'NH γ={NH_GAMMA}'),
+     'CTQW-PRO',         lambda l: all_t2[l].get('t=0.1')),
+    ('Driven',  lambda l: all_t4[l].get(f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}'),
+     'CTQW-PRO',lambda l: all_t2[l].get('t=0.1')),
+    ('RRF',     lambda l: all_t4[l].get('RRF'),
+     'CTQW-PRO',lambda l: all_t2[l].get('t=0.1')),
+]
+wc_rows = []
+print('\n--- Win counts ---')
+print(f"  {'Pair':<28} {'Dataset':<10} {'Metric':<6} "
+      f"{'A wins':>7} {'B wins':>7} {'tie':>5} {'n':>5}")
+print('  ' + '-'*68)
+for name_a, get_a, name_b, get_b in _win_pairs:
+    for metric in ['auc', 'mrr']:
+        for label in ['HMDB+CTD','MarkerDB','SMPDB']:
+            df_a = get_a(label); df_b = get_b(label)
+            if df_a is None or df_b is None: continue
+            w = win_counts(df_a, df_b, metric, name_a=name_a, name_b=name_b)
+            pair_str = f'{name_a} vs {name_b}'
+            print(f'  {pair_str:<28} {label:<10} {metric:<6} '
+                  f'{w[name_a]:>7} {w[name_b]:>7} {w["tie"]:>5} {w["n_shared"]:>5}')
+            wc_rows.append({
+                'name_a': name_a, 'name_b': name_b,
+                'source': label,  'metric': metric,
+                'wins_a': w[name_a], 'wins_b': w[name_b],
+                'tie':    w['tie'],  'n':      w['n_shared'],
+            })
 
 # ═══════════════════════════════════════════════════════════════
 # STEP 6 — Save
@@ -330,6 +362,11 @@ if wx_rows:
     out2 = RESULTS_DIR / 'wilcoxon_results.csv'
     pd.concat(wx_rows, ignore_index=True).to_csv(out2, index=False)
     print(f'  Saved: {out2}')
+
+if wc_rows:
+    out3 = RESULTS_DIR / 'win_counts.csv'
+    pd.DataFrame(wc_rows).to_csv(out3, index=False)
+    print(f'  Saved: {out3}')
 
 
 print('Done.')
