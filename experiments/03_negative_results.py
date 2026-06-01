@@ -91,11 +91,8 @@ print('  (B) Leaked:       H = A_pro + γ·diag(ALL mets)')
 print('  (C) Leakage-free: H = A_pro + γ·diag(seeds_only) per fold')
 
 GAMMA    = 10.0
-N_SAMPLE = 10
-_all_sorted  = sorted(eval_set3.items(), key=lambda x: len(x[1]))
-_bucket_size = max(1, len(_all_sorted) // N_SAMPLE)
-sample_diseases = [_all_sorted[i * _bucket_size]
-                   for i in range(min(N_SAMPLE, len(_all_sorted)))]
+
+sample_diseases = list(eval_set3.items())  # full SMPDB
 
 rows_baseline = []; rows_leaked = []; rows_noleak = []
 
