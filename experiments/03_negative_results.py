@@ -84,95 +84,219 @@ def _ctqw_cpu(sidx):
 # (B) Leaked        — H = A_pro + γ·diag(ALL mets)
 # (C) Leakage-free  — H = A_pro + γ·diag(seeds_only), per fold
 # ═══════════════════════════════════════════════════════════════
+
+import numpy as np
+import torch
+import time
+from tqdm import tqdm
+
+# ── Device setup ─────────────────────────────────────────────────
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'  Device: {device}')
+if device.type == 'cuda':
+    print(f'  GPU: {torch.cuda.get_device_name(0)}')
+    print(f'  VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')
+
+GAMMA = 10.0
+T     = float(T_FIXED)
+
+# ── Pre-load fixed data onto GPU ──────────────────────────────────
+# A_pro: numpy float64 symmetric → GPU float64
+A_pro_gpu = torch.tensor(A_pro, dtype=torch.float64, device=device)
+
+# Condition A: reuse eigensystem already computed in setup (Apro_eigvals/vecs)
+# Must cast float64 → complex128 before multiplying with 1j
+eigvecs_A_c = torch.tensor(
+    Apro_eigvecs, dtype=torch.float64, device=device
+).to(torch.complex128)                                    # (N_PRO, N_PRO)
+
+ph_A = torch.exp(
+    -1j * torch.tensor(
+        Apro_eigvals, dtype=torch.float64, device=device
+    ).to(torch.complex128) * T
+)                                                         # (N_PRO,) complex128
+
+# Index arrays for G_pro → G_cc score mapping
+_src_t = torch.tensor(_pro_src, dtype=torch.long, device=device)  # (E,)
+_dst_t = torch.tensor(_pro_dst, dtype=torch.long, device=device)  # (E,)
+
+
+# ── Helpers ───────────────────────────────────────────────────────
+def make_psi0(sidx_list):
+    """
+    Build uniform superposition |ψ0⟩ on GPU.
+    sidx_list: Python list of G_pro integer indices (no duplicates expected).
+    """
+    psi0 = torch.zeros(N_PRO, dtype=torch.complex128, device=device)
+    if sidx_list:
+        idx = torch.tensor(sidx_list, dtype=torch.long, device=device)
+        psi0[idx] = 1.0 / (len(sidx_list) ** 0.5)
+    return psi0
+
+
+def ctqw_gpu(psi0, eigvecs_c, ph):
+    """
+    CTQW: |ψ(t)⟩ = V (ph ⊙ (V† |ψ0⟩)), return |ψ(t)|² as float GPU tensor.
+    All args must be complex128 GPU tensors.
+    """
+    coeff = eigvecs_c.conj().T @ psi0   # (N_PRO,)
+    psi_t = eigvecs_c @ (ph * coeff)    # (N_PRO,)
+    return psi_t.abs().pow(2)           # (N_PRO,) float64
+
+
+def to_cc_scores(probs_gpu):
+    """
+    Map G_pro probs (N_PRO,) → G_cc scores (N,), return CPU numpy array.
+    Indices _src_t/_dst_t are preloaded global GPU tensors.
+    """
+    sc = torch.zeros(N, dtype=torch.float64, device=device)
+    sc[_dst_t] = probs_gpu[_src_t]
+    return sc.cpu().numpy()
+
+
+def eigh_gpu(diag_idx_list):
+    """
+    Eigendecomp of (A_pro + GAMMA * diag(diag_idx_list)) on GPU.
+    A_pro must remain symmetric after perturbation → only diagonal changes.
+    Returns (eigvecs_c, ph): complex128 GPU tensors.
+    Intermediate float64 tensors freed immediately to minimise VRAM.
+    Uses torch.linalg.eigh (symmetric) — correct since H stays symmetric.
+    """
+    H = A_pro_gpu.clone()
+    if diag_idx_list:
+        idx = torch.tensor(diag_idx_list, dtype=torch.long, device=device)
+        H[idx, idx] += GAMMA          # in-place, vectorised
+    ev, vecs = torch.linalg.eigh(H)  # symmetric → real eigenvalues
+    del H
+    ph     = torch.exp(-1j * ev.to(torch.complex128) * T)
+    vecs_c = vecs.to(torch.complex128)
+    del ev, vecs                      # free float64 copies
+    return vecs_c, ph
+
+
+def _row_mean(res_list):
+    """Average a list of metric dicts into one dict."""
+    return {k: float(np.mean([r[k] for r in res_list]))
+            for k in ['mrr', 'auc', 'r@20']}
+
+
+def _agg(rows, k):
+    """Grand mean of metric k across all disease rows."""
+    vals = [r[k] for r in rows if r]
+    return float(np.mean(vals)) if vals else float('nan')
+
+
+# ── EXP 1 main loop ──────────────────────────────────────────────
 print('\n' + '='*60)
-print('EXP 1: Self-loop leakage analysis')
-print('  (A) Baseline:     CTQW-PRO, γ=0')
-print('  (B) Leaked:       H = A_pro + γ·diag(ALL mets)')
-print('  (C) Leakage-free: H = A_pro + γ·diag(seeds_only) per fold')
+print('EXP 1: Self-loop leakage analysis (GPU-accelerated)')
+print(f'  (A) Baseline:     no self-loops (γ=0)')
+print(f'  (B) Leaked:       H = A_pro + {GAMMA}·diag(ALL disease mets in G_pro)')
+print(f'  (C) Leakage-free: H = A_pro + {GAMMA}·diag(seed mets only, per fold)')
+print(f'  Semantics of B: test_met receives self-loop → score artificially boosted')
+print(f'  Dataset: full SMPDB ({len(eval_set3)} diseases)')
+print(f'  NOTE: uses torch.linalg.eigh (symmetric H) for all 3 conditions')
 
-GAMMA    = 10.0
+rows_baseline = []
+rows_leaked   = []
+rows_noleak   = []
 
-sample_diseases = list(eval_set3.items())  # full SMPDB
+t_start      = time.time()
+disease_list = list(eval_set3.items())
 
-rows_baseline = []; rows_leaked = []; rows_noleak = []
+for d_idx, (disease, mets) in enumerate(tqdm(
+        disease_list, desc='EXP1', unit='disease', ncols=80)):
 
-for disease, mets in sample_diseases:
     valid   = [m for m in mets if m in node_idx]
-    if len(valid) < 3: continue
+    if len(valid) < 3:
+        continue
     all_pro = [idx_pro[m] for m in valid if m in idx_pro]
-    if not all_pro: continue
+    if not all_pro:
+        continue
 
-    # Precompute (B) — leaked eigendecomp once per disease
-    H_leak = A_pro.copy()
-    for pi in all_pro: H_leak[pi, pi] += GAMMA
-    ev_l, vecs_l = np.linalg.eigh(H_leak); del H_leak
-    ph_l = np.exp(-1j * ev_l * T_FIXED)
+    # Condition B eigendecomp: one per disease (H fixed across all folds)
+    # all_pro includes the test_met for every fold → that is the "leaked" part
+    vecs_B_c, ph_B = eigh_gpu(all_pro)
 
-    res_base = []; res_leak = []; res_noleak = []
+    res_base   = []
+    res_leak   = []
+    res_noleak = []
+    t_c_folds  = 0.0
+
     for i, test_met in enumerate(valid):
         seeds       = [m for j, m in enumerate(valid) if j != i]
         sidx        = [idx_pro[s] for s in seeds if s in idx_pro]
-        if not sidx: continue
+        if not sidx:
+            continue
         seed_set_cc = {node_idx[s] for s in seeds if s in node_idx}
         tidx_cc     = node_idx[test_met]
-        psi0        = np.zeros(N_PRO, dtype=complex)
-        psi0[sidx]  = 1.0 / np.sqrt(len(sidx))
+        psi0        = make_psi0(sidx)
 
         # (A) Baseline
-        probs_a = _ctqw_cpu(sidx)
-        sc_a = np.zeros(N); sc_a[_pro_dst] = probs_a[_pro_src]
+        sc_a = to_cc_scores(ctqw_gpu(psi0, eigvecs_A_c, ph_A))
         m_a  = compute_metrics(sc_a, tidx_cc, seed_set_cc, _n=N)
-        if m_a: res_base.append(m_a)
+        if m_a:
+            res_base.append(m_a)
 
-        # (B) Leaked
-        psi_l   = vecs_l @ (ph_l * (vecs_l.conj().T @ psi0))
-        sc_b    = np.zeros(N); sc_b[_pro_dst] = (np.abs(psi_l)**2)[_pro_src]
-        m_b     = compute_metrics(sc_b, tidx_cc, seed_set_cc, _n=N)
-        if m_b: res_leak.append(m_b)
+        # (B) Leaked: test_met has self-loop in H_B
+        sc_b = to_cc_scores(ctqw_gpu(psi0, vecs_B_c, ph_B))
+        m_b  = compute_metrics(sc_b, tidx_cc, seed_set_cc, _n=N)
+        if m_b:
+            res_leak.append(m_b)
 
-        # (C) Leakage-free — eigendecomp per fold với seeds only
-        H_c = A_pro.copy()
-        for pi in sidx: H_c[pi, pi] += GAMMA
-        ev_c, vecs_c = np.linalg.eigh(H_c); del H_c
-        ph_c  = np.exp(-1j * ev_c * T_FIXED)
-        psi_c = vecs_c @ (ph_c * (vecs_c.conj().T @ psi0))
-        sc_c  = np.zeros(N); sc_c[_pro_dst] = (np.abs(psi_c)**2)[_pro_src]
-        m_c   = compute_metrics(sc_c, tidx_cc, seed_set_cc, _n=N)
-        del ev_c, vecs_c, ph_c
-        if m_c: res_noleak.append(m_c)
+        # (C) Leakage-free: only seed mets get self-loop, test_met excluded
+        t0 = time.time()
+        vecs_C_c, ph_C = eigh_gpu(sidx)
+        sc_c = to_cc_scores(ctqw_gpu(psi0, vecs_C_c, ph_C))
+        del vecs_C_c, ph_C
+        t_c_folds += time.time() - t0
+        m_c = compute_metrics(sc_c, tidx_cc, seed_set_cc, _n=N)
+        if m_c:
+            res_noleak.append(m_c)
 
-    del ev_l, vecs_l, ph_l
-    if res_base:   rows_baseline.append({k: float(np.mean([r[k] for r in res_base]))   for k in ['mrr','auc','r@20']})
-    if res_leak:   rows_leaked.append(  {k: float(np.mean([r[k] for r in res_leak]))   for k in ['mrr','auc','r@20']})
-    if res_noleak: rows_noleak.append(  {k: float(np.mean([r[k] for r in res_noleak])) for k in ['mrr','auc','r@20']})
+    del vecs_B_c, ph_B  # free before next disease
 
-def _agg(rows, met):
-    return np.mean([r[met] for r in rows]) if rows else float('nan')
+    if res_base:   rows_baseline.append(_row_mean(res_base))
+    if res_leak:   rows_leaked.append(  _row_mean(res_leak))
+    if res_noleak: rows_noleak.append(  _row_mean(res_noleak))
 
-n = len(rows_baseline)
-print(f'\n  Sample: {n} diseases, γ={GAMMA}')
-print(f'\n  {"Condition":<30} {"AUC":>8} {"MRR":>8} {"R@20":>8}')
-print('  ' + '-'*58)
-print(f'  {"(A) Baseline (no self-loop)":<30} '
-      f'{_agg(rows_baseline,"auc"):>8.4f} '
-      f'{_agg(rows_baseline,"mrr"):>8.4f} '
-      f'{_agg(rows_baseline,"r@20"):>8.4f}')
-print(f'  {"(B) Self-loop LEAKED":<30} '
-      f'{_agg(rows_leaked,"auc"):>8.4f} '
-      f'{_agg(rows_leaked,"mrr"):>8.4f} '
-      f'{_agg(rows_leaked,"r@20"):>8.4f}  ← inflated')
-print(f'  {"(C) Self-loop leakage-free":<30} '
-      f'{_agg(rows_noleak,"auc"):>8.4f} '
-      f'{_agg(rows_noleak,"mrr"):>8.4f} '
-      f'{_agg(rows_noleak,"r@20"):>8.4f}')
+    # Progress log every 10 diseases
+    if (d_idx + 1) % 10 == 0 or d_idx == len(disease_list) - 1:
+        elapsed = time.time() - t_start
+        eta     = elapsed / (d_idx + 1) * (len(disease_list) - d_idx - 1)
+        mrr_a   = np.nanmean([r['mrr'] for r in rows_baseline]) if rows_baseline else 0.0
+        mrr_b   = np.nanmean([r['mrr'] for r in rows_leaked])   if rows_leaked   else 0.0
+        mrr_c   = np.nanmean([r['mrr'] for r in rows_noleak])   if rows_noleak   else 0.0
+        tqdm.write(
+            f'  [{d_idx+1:3d}/{len(disease_list)}] '
+            f'elapsed={elapsed/60:.1f}m  ETA={eta/60:.1f}m | '
+            f'MRR  A={mrr_a:.4f}  B={mrr_b:.4f}  C={mrr_c:.4f} | '
+            f'C_eigh={t_c_folds:.1f}s'
+        )
+
+# ── Final results ─────────────────────────────────────────────────
+n_d     = len(rows_baseline)
+total_t = time.time() - t_start
+
+print(f'\n  Done: {n_d} diseases | total = {total_t/60:.1f} min')
+print(f'\n  {"Condition":<32} {"AUC":>8} {"MRR":>8} {"R@20":>8}')
+print('  ' + '-'*60)
+for label, rows, note in [
+    ('(A) Baseline (γ=0)',          rows_baseline, ''),
+    ('(B) Self-loop LEAKED',        rows_leaked,   '  ← inflated'),
+    ('(C) Self-loop leakage-free',  rows_noleak,   ''),
+]:
+    print(f'  {label:<32} '
+          f'{_agg(rows,"auc"):>8.4f} '
+          f'{_agg(rows,"mrr"):>8.4f} '
+          f'{_agg(rows,"r@20"):>8.4f}{note}')
 
 delta_leak   = _agg(rows_leaked,  'mrr') - _agg(rows_baseline, 'mrr')
 delta_noleak = _agg(rows_noleak,  'mrr') - _agg(rows_baseline, 'mrr')
-print(f'\n  ΔMRR (B vs A): {delta_leak:+.4f}  ← gap do leakage')
-print(f'  ΔMRR (C vs A): {delta_noleak:+.4f}  ← self-loop thực sự')
+print(f'\n  ΔMRR (B vs A): {delta_leak:+.4f}  ← leakage artifact')
+print(f'  ΔMRR (C vs A): {delta_noleak:+.4f}  ← true self-loop effect')
 if delta_leak > delta_noleak + 0.01:
-    print(f'  → Leakage artifact confirmed: B inflate hơn C bởi {delta_leak-delta_noleak:.4f} MRR')
-print(f'  NOTE: Sample {n} diseases — kết luận cuối cần chạy full eval_set3.')
+    print(f'  → Leakage confirmed: B inflates by '
+          f'{delta_leak - delta_noleak:.4f} MRR over C')
 
 
 # ═══════════════════════════════════════════════════════════════
