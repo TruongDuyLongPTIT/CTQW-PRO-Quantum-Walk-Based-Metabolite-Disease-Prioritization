@@ -394,100 +394,107 @@ if disp_rows:
 #   p=0 → CTQW thuần; p=1 → full dephasing (classical)
 #   ψ_new = (1-p)*ψ + p*|ψ|  (partial phase destruction)
 # ═══════════════════════════════════════════════════════════════
+
+"""
+setup_only.py — Chỉ setup dữ liệu + eigen-decomposition, KHÔNG chạy
+run_loo_eval (phần tốn hàng giờ). Dùng để chạy nhanh các đoạn check
+(ví dụ check_sigma5_direct.py) mà không cần chạy lại toàn bộ pipeline.
+
+Sau khi chạy file này, các biến sau sẽ có sẵn trong kernel:
+  eval_set1, idx_pro, N_PRO, N, Apro_eigvecs, Apro_eigvals,
+  _ph_fixed, RNG, N_MC
+"""
+import numpy as np
+
+from config import RESULTS_DIR, CACHE_DIR, T_FIXED
+from graph import (parse_recon3d, build_gcc, build_gpro,
+                   build_hmdb_to_recon_initial, augment_hmdb_to_recon,
+                   compute_eigendecomp)
+from eval_sets import (parse_hmdb, build_hmdb_lookups, build_cofactors_set,
+                       build_eval_set1)
+
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+RNG = np.random.default_rng(42)
+
+print('Setup (chỉ dữ liệu + eigen-decomposition, không chạy eval)...')
+
+recon_data = parse_recon3d()
+G_cc, _, N, node_idx, _, _ = build_gcc(recon_data)
+pathway_mets = recon_data['pathway_mets']
+met_info     = recon_data['met_info']
+
+(G_pro, _, N_PRO, idx_pro,
+ A_pro, deg_pro, _pro_src, _pro_dst) = build_gpro(G_cc, node_idx, pathway_mets)
+
+Apro_eigvals, Apro_eigvecs = compute_eigendecomp(
+    A_pro, CACHE_DIR / 'gpro_eigdecomp.npz')
+
+hmdb_data        = parse_hmdb()
+hmdb_metabolites = hmdb_data['metabolites']
+hmdb_lookups     = build_hmdb_lookups(hmdb_metabolites)
+hmdb_to_recon    = build_hmdb_to_recon_initial(met_info, node_idx)
+augment_hmdb_to_recon(hmdb_to_recon, met_info, node_idx,
+    hmdb_lookups['ik_to_id'], hmdb_lookups['ikshort_to_id'],
+    hmdb_lookups['name_to_id'], hmdb_lookups['name_aggr_to_id'])
+COFACTORS = build_cofactors_set(hmdb_metabolites)
+
+eval_set1, _ = build_eval_set1(
+    hmdb_metabolites, hmdb_lookups, hmdb_to_recon, node_idx, COFACTORS)
+print(f'  HMDB+CTD: {len(eval_set1)} diseases')
+
+_ph_fixed = np.exp(-1j * Apro_eigvals * float(T_FIXED))
+N_MC      = 25   # đồng bộ với exp_coherence_minimal.py, dùng nếu cần
+
+print('Setup xong. Có sẵn: eval_set1, idx_pro, N_PRO, N, Apro_eigvecs,')
+print('Apro_eigvals, _ph_fixed, RNG, N_MC')
+print('-> Có thể chạy thẳng check_sigma5_direct.py ngay sau đoạn này.')
+
+#------------------------------------------------------------------------
+
 print('\n' + '='*60)
 print('EXP 3: Dephasing walk (decoherence experiment)')
-print('  Protocol: grid search p on HMDB+CTD → report p* on SMPDB')
 
-DEPHASING_GRID = [0.1, 0.3, 0.5, 0.7, 0.9, 1.0]
-N_STEPS_DEPH   = 3
+import numpy as np
 
-def _make_deph_fn(p_val):
-    def fn(seeds):
-        valid_idx = [idx_pro[s] for s in seeds if s in idx_pro]
-        if not valid_idx: return np.zeros(N)
-        psi = np.zeros(N_PRO, dtype=complex)
-        psi[valid_idx] = 1.0 / np.sqrt(len(valid_idx))
-        for _ in range(N_STEPS_DEPH):
-            psi = Apro_eigvecs @ (_ph0 * (Apro_eigvecs.conj().T @ psi))
-            if p_val > 0:
-                psi = (1.0 - p_val) * psi + p_val * np.abs(psi).astype(complex)
-            nrm = np.linalg.norm(psi)
-            if nrm > 1e-9: psi /= nrm
-        sc = np.zeros(N); sc[_pro_dst] = (np.abs(psi)**2)[_pro_src]
-        return sc
-    return fn
+_test_key    = next(iter(eval_set1)) if isinstance(eval_set1, dict) else 0
+_test_record = eval_set1[_test_key]
+_test_seeds  = (_test_record.get('seeds', _test_record.get('seed_nodes'))
+                if isinstance(_test_record, dict)
+                else getattr(_test_record, 'seeds', _test_record))
+print(f'Test seed set: {_test_key!r}  (n_seeds={len(_test_seeds)})')
 
-all_p        = [0.0] + DEPHASING_GRID
-deph_methods = {f'deph_p{p:.1f}': _make_deph_fn(p) for p in all_p}
+_sidx = [idx_pro[s] for s in _test_seeds if s in idx_pro]
+_psi0 = np.zeros(N_PRO, dtype=complex)
+_psi0[_sidx] = 1.0 / np.sqrt(len(_sidx))
+_c = Apro_eigvecs.conj().T @ _psi0
 
-# Phase 1: grid search on HMDB+CTD
-print(f'\n  Phase 1 — Grid search on HMDB+CTD...')
-res_grid = {}
-for p_name, fn in deph_methods.items():
-    res_grid[p_name] = run_loo_eval(eval_set1, fn, node_idx, N, label=p_name)
 
-df_ctqw_grid = run_loo_eval(eval_set1, ctqw_fn, node_idx, N, label='CTQW-PRO/HMDB+CTD')
-ctqw_mrr = df_ctqw_grid['mrr'].mean() if df_ctqw_grid is not None else 0.0
-df_p0    = res_grid.get('deph_p0.0')
-fair_mrr = df_p0['mrr'].mean() if (df_p0 is not None and not df_p0.empty) else ctqw_mrr
+probs_analytical = (Apro_eigvecs**2) @ (np.abs(_c)**2)
 
-print(f'\n  {"p":<14} {"MRR":>8} {"R@20":>8} {"AUC":>8}')
-print('  ' + '-'*40)
-print(f'  {"CTQW-PRO(t=0.1)":<14} {ctqw_mrr:>8.4f}  ← original baseline')
-print(f'  {"CTQW(n_steps=3)":<14} {fair_mrr:>8.4f}  ← fair baseline')
+def mc_probs(sigma, n_samples):
+    """Vector xác suất trung bình Monte Carlo với nhiễu pha ~ N(0, sigma^2)."""
+    if sigma == 0.0:
+        return np.abs(Apro_eigvecs @ (_ph_fixed * _c))**2
+    probs = np.zeros(N_PRO)
+    for _ in range(n_samples):
+        noise = RNG.normal(0.0, sigma, size=N_PRO)
+        probs += np.abs(Apro_eigvecs @ ((_ph_fixed * np.exp(1j * noise)) * _c))**2
+    return probs / n_samples
 
-best_p_name = None; best_mrr_d = fair_mrr
-for p in all_p:
-    p_name = f'deph_p{p:.1f}'
-    df     = res_grid.get(p_name)
-    if df is None or df.empty: continue
-    is_p0  = (p == 0.0)
-    note   = '  (fair baseline)' if is_p0 else ''
-    mark   = ' ◄ BEST' if (df['mrr'].mean() > best_mrr_d and not is_p0) else ''
-    print(f'  {p_name:<14} {df["mrr"].mean():>8.4f} '
-          f'{df["r@20"].mean():>8.4f} {df["auc"].mean():>8.4f}{mark}{note}')
-    if df['mrr'].mean() > best_mrr_d and not is_p0:
-        best_mrr_d  = df['mrr'].mean()
-        best_p_name = p_name
+SIGMA_GRID = [0.1, 0.5, 1.0, 2.0, 3.0, 5.0]
+K_REPEATS  = 5
+N_MC       = 3000
 
-if best_p_name is None:
-    best_p_val  = 0.0
-    best_p_name = 'deph_p0.0'
-    print(f'\n  No improvement — best p* = 0.0')
-else:
-    best_p_val = float(best_p_name.rsplit('p', 1)[1])
-    print(f'\n  Best p* = {best_p_val} (ΔMRR vs fair baseline = {best_mrr_d-fair_mrr:+.4f})')
-
-# Phase 2: report on SMPDB
-print(f'\n  Phase 2 — Report on SMPDB (p*={best_p_val})...')
-df_prof_s3  = run_loo_eval(eval_set3, run_profancy, node_idx, N, label='PROFANCY/SMPDB')
-df_ctqw_s3  = run_loo_eval(eval_set3, ctqw_fn,      node_idx, N, label='CTQW-PRO/SMPDB')
-df_deph_s3  = run_loo_eval(eval_set3, deph_methods[best_p_name], node_idx, N,
-                            label=f'Dephasing(p*={best_p_val})/SMPDB')
-
-print(f'\n  {"Method":<25} {"AUC":>8} {"MRR":>8} {"R@5":>7} {"R@20":>7}')
-print('  ' + '-'*55)
-for mname, df in [('PROFANCY', df_prof_s3), ('CTQW-PRO', df_ctqw_s3),
-                   (f'Dephasing(p*={best_p_val})', df_deph_s3)]:
-    if df is None or df.empty:
-        print(f'  {mname:<25}  (no results)'); continue
-    delta = ''
-    if mname not in ('PROFANCY','CTQW-PRO') and df_ctqw_s3 is not None:
-        d = df['mrr'].mean() - df_ctqw_s3['mrr'].mean()
-        delta = f'  Δ={d:+.4f} vs CTQW-PRO'
-    print(f'  {mname:<25} {df["auc"].mean():>8.4f} {df["mrr"].mean():>8.4f} '
-          f'{df["r@5"].mean():>7.4f} {df["r@20"].mean():>7.4f}{delta}')
-
-if df_deph_s3 is not None and not df_deph_s3.empty and df_ctqw_s3 is not None:
-    print(f'\n  Wilcoxon: Dephasing(p*={best_p_val}) vs CTQW-PRO (SMPDB)')
-    wilcoxon_table(df_deph_s3, df_ctqw_s3, 'SMPDB',
-                   method_a=f'Dephasing(p*={best_p_val})', method_b='CTQW-PRO')
-    delta_mrr = df_deph_s3['mrr'].mean() - df_ctqw_s3['mrr'].mean()
-    print(f'\n  CONCLUSION: ΔMRR = {delta_mrr:+.4f}')
-    if delta_mrr < -0.005:
-        print('  ✗ Dephasing DEGRADES performance — coherence is essential')
-    else:
-        print('  ~ No significant improvement from dephasing')
+print(f'\n{"sigma":<8}{"mean L2 dist":>16}{"std":>12}   xu hướng')
+print('-'*52)
+prev_mean = None
+for sigma in SIGMA_GRID:
+    dists = [np.linalg.norm(mc_probs(sigma, N_MC) - probs_analytical)
+              for _ in range(K_REPEATS)]
+    m, s = np.mean(dists), np.std(dists)
+    trend = '' if prev_mean is None else ('giảm' if m < prev_mean else 'bão hòa/nhiễu')
+    print(f'{sigma:<8}{m:>16.6f}{s:>12.6f}   {trend}')
+    prev_mean = m
 
 
 # ═══════════════════════════════════════════════════════════════
