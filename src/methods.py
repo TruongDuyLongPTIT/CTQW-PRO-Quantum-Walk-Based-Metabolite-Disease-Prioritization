@@ -9,25 +9,25 @@ Theo thứ tự paper:
 """
 import numpy as np
 from scipy.stats import rankdata as _rankdata
-from config import T_FIXED, RWR_ALPHA, RWR_TOL, RWR_MAXITER, DRIVEN_N_STEPS, DRIVEN_ALPHA
+from config import T_FIXED, RWR_R, RWR_TOL, RWR_MAXITER, DRIVEN_N_STEPS, DRIVEN_ALPHA
 
 
 # ══════════════════════════════════════════════════════════════
 # TABLE 1 — RWR vs CTQW (G_cc)
 # ══════════════════════════════════════════════════════════════
 
-def run_rwr(seed_nodes, P_cc, node_idx, N, alpha=RWR_ALPHA):
-    """RWR on G_cc."""
+def run_rwr(seed_nodes, P_cc, node_idx, N, r=RWR_R):
+    """RWR on G_cc. p^(t+1) = (1-r)·P^T·p^t + r·p^0  (Köhler et al., 2008)."""
     valid = [s for s in seed_nodes if s in node_idx]
     if not valid: return np.zeros(N)
-    e0 = np.zeros(N)
-    for s in valid: e0[node_idx[s]] = 1.0 / len(valid)
-    r = e0.copy()
+    p0 = np.zeros(N)
+    for s in valid: p0[node_idx[s]] = 1.0 / len(valid)
+    p = p0.copy()
     for _ in range(RWR_MAXITER):
-        r_new = alpha * (P_cc.T @ r) + (1 - alpha) * e0
-        if np.abs(r_new - r).max() < RWR_TOL: break
-        r = r_new
-    return r
+        p_new = (1 - r) * (P_cc.T @ p) + r * p0
+        if np.abs(p_new - p).max() < RWR_TOL: break
+        p = p_new
+    return p
 
 
 def make_ctqw_gcc(eigvals, eigvecs, N):
@@ -52,27 +52,29 @@ def make_ctqw_gcc(eigvals, eigvecs, N):
 # TABLE 2 — PROFANCY vs CTQW-PRO (G_pro)
 # ══════════════════════════════════════════════════════════════
 
-def make_profancy(P_pro, idx_pro, node_idx, N, N_PRO, alpha=RWR_ALPHA):
+def make_profancy(P_pro, idx_pro, node_idx, N, N_PRO, r=RWR_R):
     """
     PROFANCY: RWR trên G_pro.
+    p^(t+1) = (1-r)·P^T·p^t + r·p^0   (Köhler et al., 2008; Shang et al., 2014)
     Returns run_profancy(seed_nodes) → scores (N,).
     """
     _N = N; _N_PRO = N_PRO
     _P_pro = P_pro; _idx_pro = idx_pro; _node_idx = node_idx
+    _r = r
 
     def run_profancy(seed_nodes, _n=_N):
         valid = [s for s in seed_nodes if s in _idx_pro]
         if not valid: return np.zeros(_n)
-        e0 = np.zeros(_N_PRO)
-        for s in valid: e0[_idx_pro[s]] = 1.0 / len(valid)
-        r = e0.copy()
+        p0 = np.zeros(_N_PRO)
+        for s in valid: p0[_idx_pro[s]] = 1.0 / len(valid)
+        p = p0.copy()
         for _ in range(RWR_MAXITER):
-            r_new = alpha * (_P_pro.T @ r) + (1 - alpha) * e0
-            if np.abs(r_new - r).max() < RWR_TOL: break
-            r = r_new
+            p_new = (1 - _r) * (_P_pro.T @ p) + _r * p0
+            if np.abs(p_new - p).max() < RWR_TOL: break
+            p = p_new
         scores = np.zeros(_n)
         for nd, i in _node_idx.items():
-            if nd in _idx_pro: scores[i] = r[_idx_pro[nd]]
+            if nd in _idx_pro: scores[i] = p[_idx_pro[nd]]
         return scores
 
     return run_profancy
