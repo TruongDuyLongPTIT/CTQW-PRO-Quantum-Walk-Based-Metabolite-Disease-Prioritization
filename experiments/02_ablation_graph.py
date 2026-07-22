@@ -53,7 +53,8 @@ eval_set1, disease_canonical = build_eval_set1(
 eval_set2 = build_eval_set2(
     hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
     node_idx, COFACTORS, disease_canonical)
-eval_set3 = build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx)
+eval_set3 = build_eval_set3(
+    hmdb_metabolites, hmdb_to_recon, node_idx, COFACTORS)
 
 print('Eigendecomposition...')
 eigvals_o, eigvecs_o = compute_eigendecomp(A_pro, CACHE_DIR/'gpro_eigdecomp.npz')

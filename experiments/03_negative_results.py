@@ -56,7 +56,8 @@ COFACTORS = build_cofactors_set(hmdb_metabolites)
 
 eval_set1, _ = build_eval_set1(
     hmdb_metabolites, hmdb_lookups, hmdb_to_recon, node_idx, COFACTORS)
-eval_set3    = build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx)
+eval_set3 = build_eval_set3(
+    hmdb_metabolites, hmdb_to_recon, node_idx, COFACTORS)
 
 print(f'  HMDB+CTD: {len(eval_set1)} diseases')
 print(f'  SMPDB:    {len(eval_set3)} diseases')

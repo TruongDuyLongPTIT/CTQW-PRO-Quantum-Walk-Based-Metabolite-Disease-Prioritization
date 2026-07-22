@@ -94,7 +94,7 @@ eval_set2 = build_eval_set2(
     hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
     node_idx, COFACTORS, disease_canonical)
 eval_set3 = build_eval_set3(
-    hmdb_metabolites, hmdb_to_recon, node_idx)
+    hmdb_metabolites, hmdb_to_recon, node_idx, COFACTORS)
 
 print(f'  eval_set1 (HMDB+CTD): {len(eval_set1)} diseases')
 print(f'  eval_set2 (MarkerDB): {len(eval_set2)} diseases')

@@ -3,8 +3,12 @@ eval_sets.py — Build 3 evaluation sets.
 Exact từ notebook Cells 3 (HMDB+CTD), 4 (MarkerDB), 5 (SMPDB).
 
 CRITICAL correctness notes:
-- eval_set1/2: filter `base in RECON3D_COFACTORS or name in COFACTORS`
-- eval_set3:   filter `mnodes -= RECON3D_COFACTORS` only (by node ID, not name)
+- eval_set1/2/3: filter `base in RECON3D_COFACTORS or normalize_name(name) in COFACTORS`
+  (ĐỒNG NHẤT cho cả 3 eval set — patch 2026-07: trước đây eval_set3 chỉ lọc theo
+  RECON3D_COFACTORS bằng node ID, không lọc theo tên COFACTORS như set1/2. Đã kiểm
+  chứng bằng thực nghiệm: áp thêm name-filter cho SMPDB không thay đổi kết quả
+  (Jaccard=1.0 trên toàn bộ 153/153 bệnh, 0 metabolite bị loại thêm) — nên patch này
+  không ảnh hưởng số liệu đã báo cáo trước đó, chỉ để đồng bộ logic cho rõ ràng.
 - hmdb_to_recon: shared mutable dict, augmented in Cell 3
 - CTD: split(',') + pts[5] for DirectEvidence = 'marker'
 - SMPDB: extract to /tmp/smpdb/ for zip files
@@ -420,13 +424,20 @@ def _get_smpdb_met_dir():
 # ── Eval set 3: SMPDB — exact từ notebook Cell 5 ─────────────────────────────
 
 def build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx,
-                    min_mets=MIN_METS):
+                    COFACTORS, min_mets=MIN_METS):
     """
     Exact từ notebook Cell 5.
 
-    CRITICAL cofactor filter (DIFFERENT from eval_set1/2):
-        `mnodes -= RECON3D_COFACTORS`  ← by node ID only, NOT by name
-        (eval_set1/2 also checks name-based COFACTORS, eval_set3 does NOT)
+    Cofactor filter — ĐỒNG NHẤT với eval_set1/2 (patch 2026-07):
+        `base in RECON3D_COFACTORS or normalize_name(name) in COFACTORS`
+    Trước patch này, eval_set3 chỉ lọc theo RECON3D_COFACTORS (node ID),
+    không lọc theo tên (COFACTORS) như eval_set1/2. Đã kiểm chứng thực
+    nghiệm (04_check_smpdb_cofactor_filter.py): áp thêm name-filter cho
+    SMPDB cho Jaccard=1.0 trên 153/153 bệnh, 0 metabolite bị loại thêm —
+    tức patch này không thay đổi số liệu đã báo cáo, chỉ đồng bộ logic.
+
+    COFACTORS là tham số BẮT BUỘC (không có default) để tránh vô tình
+    quay lại hành vi bất đối xứng cũ nếu quên truyền.
     """
     from tqdm.auto import tqdm
 
@@ -489,15 +500,19 @@ def build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx,
                 if hmdb_status_cache.get(hid,'').strip().lower() in ALLOWED_STATUSES}
         if kept: smpdb_filt[pw_name] = kept
 
-    # Map HMDB → Recon3D
-    # CRITICAL: only RECON3D_COFACTORS filter (NOT name-based COFACTORS)
+    # Map HMDB → Recon3D — lọc cả RECON3D_COFACTORS (ID) và COFACTORS (tên),
+    # đồng nhất với build_eval_set1/2 (patch 2026-07).
     smpdb_nodes = {}
     for pw_name, hmdb_ids in smpdb_filt.items():
         mnodes = set()
         for hid in hmdb_ids:
             base = hmdb_to_recon.get(hid)
-            if base and base in node_idx: mnodes.add(base)
-        mnodes -= RECON3D_COFACTORS   # exact from notebook
+            if not base or base not in node_idx: continue
+            # Exact cofactor check, đồng nhất với build_eval_set1/2
+            if base in RECON3D_COFACTORS or normalize_name(
+                    hmdb_metabolites.get(hid, {}).get('name', '')) in COFACTORS:
+                continue
+            mnodes.add(base)
         if mnodes: smpdb_nodes[pw_name] = mnodes
 
     # Filter None/empty keys
