@@ -83,7 +83,7 @@ augment_hmdb_to_recon(
     hmdb_lookups['ik_to_id'], hmdb_lookups['ikshort_to_id'],
     hmdb_lookups['name_to_id'], hmdb_lookups['name_aggr_to_id'])
 COFACTORS = build_cofactors_set(hmdb_metabolites)
-eval_set3 = build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx)
+eval_set3 = build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx, COFACTORS)
 
 # Reverse map: recon_id → HMDB IDs
 recon_to_hmdb = {}
