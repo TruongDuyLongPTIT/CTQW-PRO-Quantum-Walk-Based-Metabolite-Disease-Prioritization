@@ -26,7 +26,7 @@ RWR_MAXITER = 200
 
 MIN_METS    = 8      # notebook output = 8
 RANDOM_SEED = 42
-METRIC_KEYS_FULL = ['auc', 'mrr', 'rank', 'r@5', 'r@10', 'r@20', 'r@50']
+METRIC_KEYS_FULL = ['auc', 'mrr', 'rank', 'r@5', 'r@10', 'r@20']
 
 # Exact từ notebook Cell 3
 RECON3D_CURRENCY_METABOLITE = {

@@ -76,7 +76,8 @@ dset_by_label = {'HMDB+CTD': eval_set1, 'SMPDB': eval_set3}
 # EXP 1 — Currency-metabolite rank bias (Bằng chứng thứ nhất, Mục 4.3.1 paper)
 # Percentile rank trung bình của currency metabolite trong candidate set
 # (PROFANCY vs CTQW-PRO), và tương quan Spearman giữa node degree và score
-# PROFANCY — xác nhận trực tiếp "PROFANCY bị chi phối bởi degree".
+# của CẢ HAI phương pháp — xác nhận "PROFANCY bị chi phối bởi degree nhiều
+# hơn CTQW-PRO" (Bảng 8 paper cần rho của cả PROFANCY lẫn CTQW-PRO).
 # percentile 0% = xếp hạng cao nhất; 100% = thấp nhất.
 # ═══════════════════════════════════════════════════════════════
 print('\n' + '='*60)
@@ -94,7 +95,8 @@ def percentile_ranks(score_vec, cand, cm_set):
 
 for label, eval_set in dset_by_label.items():
     rows = []
-    degree_score_pairs = []
+    degree_score_pairs_prof = []
+    degree_score_pairs_ctqw = []
     for d, seed_mets in eval_set.items():
         seed_nodes = [m for m in seed_mets if m in idx_pro]
         if len(seed_nodes) < 2: continue
@@ -112,7 +114,9 @@ for label, eval_set in dset_by_label.items():
             'avg_pctl_cm_CTQWPRO':  np.mean(list(pctl_ctqw.values())),
         })
         for nd in cand:
-            degree_score_pairs.append((float(deg_pro[idx_pro[nd]]), float(sc_prof[node_idx[nd]])))
+            deg_nd = float(deg_pro[idx_pro[nd]])
+            degree_score_pairs_prof.append((deg_nd, float(sc_prof[node_idx[nd]])))
+            degree_score_pairs_ctqw.append((deg_nd, float(sc_ctqw[node_idx[nd]])))
 
     df_pctl = pd.DataFrame(rows).sort_values('avg_pctl_cm_PROFANCY', ascending=False)
     df_pctl_dedup = df_pctl.drop_duplicates(subset='seed_key', keep='first')
@@ -127,10 +131,13 @@ for label, eval_set in dset_by_label.items():
         _, p_t  = ttest_rel(sub_df['avg_pctl_cm_CTQWPRO'], sub_df['avg_pctl_cm_PROFANCY'])
         print(f'  Wilcoxon p={p_wx:.4g}  |  paired t-test p={p_t:.4g}')
 
-    degs, scores = zip(*degree_score_pairs)
-    rho, p = spearmanr(degs, scores)
-    print(f'\n[{label}] Spearman(degree, PROFANCY score): rho={rho:.4f}, p={p:.4g} '
-          f'(n={len(degs)})')
+    degs_p, scores_p = zip(*degree_score_pairs_prof)
+    rho_p, p_p = spearmanr(degs_p, scores_p)
+    degs_c, scores_c = zip(*degree_score_pairs_ctqw)
+    rho_c, p_c = spearmanr(degs_c, scores_c)
+    print(f'\n[{label}] Spearman(degree, score):')
+    print(f'  PROFANCY : rho={rho_p:.4f}, p={p_p:.4g} (n={len(degs_p)})')
+    print(f'  CTQW-PRO : rho={rho_c:.4f}, p={p_c:.4g} (n={len(degs_c)})')
 
 
 # ═══════════════════════════════════════════════════════════════
