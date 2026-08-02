@@ -33,11 +33,10 @@ METRIC_KEYS_FULL = ['auc', 'mrr', 'rank', 'r@5', 'r@10', 'r@20', 'r@50']
 
 # Exact từ notebook Cell 3
 RECON3D_COFACTORS = {
-    'h2o','h','co2','o2','pi','ppi','hco3','atp','adp','amp','gtp','gdp','gmp',
-    'ctp','cdp','cmp','utp','udp','ump','datp','dadp','damp','nad','nadh','nadp',
-    'nadph','fad','fadh2','fmn','fmnh2','coa','accoa','q','qh2','h2o2',
-    'na1','k1','cl','ca2','mg2','fe2','fe3','zn2','cu2','mn2','nh3','nh4',
-    'so4','no','h2','oh1','h2s',
+    'nad', 'nadh', 'nadp', 'nadph', 'fad', 'fadh2', 'coa', 'accoa',
+    'atp', 'adp', 'amp', 'gtp', 'gdp', 'gmp', 'ctp', 'cdp', 'cmp',
+    'utp', 'udp', 'ump', 'h', 'h2o', 'co2', 'o2', 'pi', 'ppi',
+    'hco3', 'nh4', 'so4',
 }
 COFACTORS_FALLBACK = {
     'h2o','h','h+','oh-','na+','k+','cl-','ca2+','mg2+','fe2+','fe3+',
