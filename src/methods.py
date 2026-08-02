@@ -5,11 +5,9 @@ Theo thứ tự paper:
   Table 1:  run_rwr, make_ctqw_gcc
   Table 2:  make_profancy, make_ctqw_pro
   Table 3:  make_nh_pro
-  Table 4:  make_driven_pro, make_rrf
 """
 import numpy as np
-from scipy.stats import rankdata as _rankdata
-from config import T_FIXED, RWR_R, RWR_TOL, RWR_MAXITER, DRIVEN_N_STEPS, DRIVEN_ALPHA
+from config import T_FIXED, RWR_R, RWR_TOL, RWR_MAXITER
 
 
 # ══════════════════════════════════════════════════════════════
@@ -124,18 +122,18 @@ def make_ctqw_pro(eigvals, eigvecs, idx_pro, N, N_PRO, _pro_src, _pro_dst):
 def make_nh_pro(A_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst,
                 CURRENCY_METABOLITE, pro_nodes, gamma, t=T_FIXED):
     """
-    NH-CTQW-PRO: H_eff = A_pro - i·γ·diag(cofactor_vec)
-    Imaginary decay tại cofactor nodes → suppress hub bias.
+    NH-CTQW-PRO: H_eff = A_pro - i·γ·diag(currency_metabolite_vec)
+    Imaginary decay tại các currency metabolite → suppress hub bias.
     gamma = mean_degree ≈ 22.
 
     Returns run_nh(seed_nodes) → scores (N,).
     """
-    cof_set = set(CURRENCY_METABOLITE)
+    cm_set = set(CURRENCY_METABOLITE)
 
     # Diagonal indexing — tránh tạo N×N matrix không cần thiết
     H_eff = A_pro.astype(complex)
     for i, nd in enumerate(pro_nodes):
-        if nd in cof_set or nd.replace('_c','').replace('_m','').replace('_e','') in cof_set:
+        if nd in cm_set or nd.replace('_c','').replace('_m','').replace('_e','') in cm_set:
             H_eff[i, i] -= 1j * gamma
 
     eigvals_nh, V_nh = np.linalg.eig(H_eff)
@@ -155,51 +153,3 @@ def make_nh_pro(A_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst,
         return sc
 
     return run_nh
-
-
-# ══════════════════════════════════════════════════════════════
-# TABLE 4 — Driven CTQW-PRO & RRF
-# ══════════════════════════════════════════════════════════════
-
-def make_driven_pro(eigvals, eigvecs, idx_pro, N, N_PRO, _pro_src, _pro_dst,
-                    n_steps=DRIVEN_N_STEPS, alpha=DRIVEN_ALPHA):
-    """
-    Driven CTQW-PRO: reinforce seed state sau mỗi bước để chống temporal drift.
-      ψ^(k) = normalize((1-α)·e^{-iAt}ψ^(k-1) + α·ψ_seed)
-    Returns run_driven(seed_nodes) → scores (N,).
-    """
-    _N = N; _N_PRO = N_PRO
-    _idx_pro = idx_pro; _src = _pro_src; _dst = _pro_dst
-    _ev = eigvals; _vecs = eigvecs
-    _phases = np.exp(-1j * eigvals * T_FIXED)
-
-    def run_driven(seed_nodes, _n=_N):
-        valid = [_idx_pro[s] for s in seed_nodes if s in _idx_pro]
-        if not valid: return np.zeros(_n)
-        psi_seed = np.zeros(_N_PRO, dtype=complex)
-        psi_seed[valid] = 1.0 / np.sqrt(len(valid))
-        psi = psi_seed.copy()
-        for _ in range(n_steps):
-            walked = _vecs @ (_phases * (_vecs.conj().T @ psi))
-            psi    = (1 - alpha) * walked + alpha * psi_seed
-            nrm    = np.linalg.norm(psi)
-            if nrm > 1e-9: psi /= nrm
-        sc = np.zeros(_n)
-        sc[_dst] = (np.abs(psi)**2)[_src]
-        return sc
-
-    return run_driven
-
-
-def make_rrf(fn_a, fn_b, k=60):
-    """
-    RRF(fn_a, fn_b): score_rrf(j) = 1/(k+rank_a(j)) + 1/(k+rank_b(j))
-    k=60: standard default [Cormack et al., 2009].
-    """
-    def run_rrf(seed_nodes):
-        ra = _rankdata(-fn_a(seed_nodes), method='average')
-        rb = _rankdata(-fn_b(seed_nodes), method='average')
-        return 1.0 / (k + ra) + 1.0 / (k + rb)
-    return run_rrf
-
-

@@ -4,6 +4,11 @@ Table 1: CTQW vs RWR (G_cc)    [chạy trước]
 Table 2: CTQW-PRO vs PROFANCY (G_pro)
 Table 3: NH-CTQW-PRO vs CTQW-PRO
 
++ Wilcoxon chéo đồ thị: PROFANCY(Gpro) vs RWR(Gcc), CTQW-PRO(Gpro) vs CTQW(Gcc)
+  — bằng chứng thống kê cho "augment pathway node giúp CTQW nhiều hơn RWR".
++ Bảng dedup (khử seed-set trùng lặp, nhiều tên bệnh cùng trỏ 1 seed-set) cho
+  Table 1/2/3, song song bảng full.
+
 Closely follows notebook Cell 7 (LOO) and Cell 8 (stats).
 """
 import sys, time
@@ -14,10 +19,9 @@ import numpy as np
 import pandas as pd
 
 from config import (
-    RESULTS_DIR, CACHE_DIR, RANDOM_SEED,
-    T_FIXED, RWR_R, DRIVEN_N_STEPS, DRIVEN_ALPHA,
-    NH_GAMMA, RRF_K,
-    RECON3D_COFACTORS,
+    RESULTS_DIR, CACHE_DIR,
+    T_FIXED, NH_GAMMA,
+    RECON3D_CURRENCY_METABOLITE,
 )
 from graph import (
     parse_recon3d, build_gcc, build_gpro,
@@ -25,12 +29,12 @@ from graph import (
     compute_eigendecomp,
 )
 from eval_sets import (
-    parse_hmdb, build_hmdb_lookups, build_cofactors_set,
+    parse_hmdb, build_hmdb_lookups, build_CURRENCY_METABOLITE_set,
     build_eval_set1, build_eval_set2, build_eval_set3,
 )
 from methods import (
     run_rwr, make_profancy, make_ctqw_pro, make_ctqw_gcc,
-    make_nh_pro, make_rrf, make_driven_pro,
+    make_nh_pro,
 )
 from evaluation import (
     run_loo_eval,
@@ -84,21 +88,35 @@ n_ik, n_nm = augment_hmdb_to_recon(
 )
 print(f'  hmdb_to_recon: +{n_ik} IK, +{n_nm} name → {len(hmdb_to_recon)} total')
 
-# COFACTORS name-based set (exact từ notebook Cell 3)
-COFACTORS = build_cofactors_set(hmdb_metabolites)
+# CURRENCY_METABOLITE name-based set (exact từ notebook Cell 3)
+CURRENCY_METABOLITE = build_CURRENCY_METABOLITE_set(hmdb_metabolites)
 
 # Build eval sets
 eval_set1, disease_canonical = build_eval_set1(
-    hmdb_metabolites, hmdb_lookups, hmdb_to_recon, node_idx, COFACTORS)
+    hmdb_metabolites, hmdb_lookups, hmdb_to_recon, node_idx, CURRENCY_METABOLITE)
 eval_set2 = build_eval_set2(
     hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
-    node_idx, COFACTORS, disease_canonical)
+    node_idx, CURRENCY_METABOLITE, disease_canonical)
 eval_set3 = build_eval_set3(
-    hmdb_metabolites, hmdb_to_recon, node_idx, COFACTORS)
+    hmdb_metabolites, hmdb_to_recon, node_idx, CURRENCY_METABOLITE)
 
 print(f'  eval_set1 (HMDB+CTD): {len(eval_set1)} diseases')
 print(f'  eval_set2 (MarkerDB): {len(eval_set2)} diseases')
 print(f'  eval_set3 (SMPDB):    {len(eval_set3)} diseases')
+
+EVAL_SETS = {'HMDB+CTD': eval_set1, 'MarkerDB': eval_set2, 'SMPDB': eval_set3}
+
+# Bệnh đại diện sau khi khử trùng seed-set (nhiều tên bệnh có thể trỏ tới cùng
+# một danh sách metabolite, đặc biệt ở SMPDB) — dùng cho bảng dedup ở STEP 5.
+def _dedup_diseases(eval_set):
+    rep = {}
+    for d, mets in eval_set.items():
+        rep.setdefault(tuple(sorted(mets)), d)
+    return set(rep.values())
+
+dedup_diseases = {label: _dedup_diseases(dset) for label, dset in EVAL_SETS.items()}
+for label, dedup in dedup_diseases.items():
+    print(f'  {label}: {len(EVAL_SETS[label])} tên bệnh → {len(dedup)} seed-set độc lập')
 
 # ═══════════════════════════════════════════════════════════════
 # STEP 3 — Eigendecomposition (exact từ notebook Cell 6)
@@ -123,9 +141,7 @@ _ctqw_gcc = make_ctqw_gcc(Acc_eigvals, Acc_eigvecs, N)
 _ctqw_gcc_fn = lambda seeds: _ctqw_gcc(seeds, node_idx)
 
 all_t1 = {}
-for label, dset in [('HMDB+CTD', eval_set1),
-                     ('MarkerDB', eval_set2),
-                     ('SMPDB',    eval_set3)]:
+for label, dset in EVAL_SETS.items():
     t0 = time.time()
     df_rwr  = run_loo_eval(dset, _rwr_fn,   node_idx, N, label=f'RWR/{label}')
     df_ctqw = run_loo_eval(dset, _ctqw_gcc_fn, node_idx, N, label=f'CTQW/{label}')
@@ -146,9 +162,7 @@ run_ctqw_pro = make_ctqw_pro(
 _ctqw_pro_fn = lambda seeds: run_ctqw_pro(seeds, [T_FIXED])[T_FIXED]
 
 all_t2 = {}
-for label, dset in [('HMDB+CTD', eval_set1),
-                     ('MarkerDB', eval_set2),
-                     ('SMPDB',    eval_set3)]:
+for label, dset in EVAL_SETS.items():
     t0 = time.time()
     df_prof = run_loo_eval(dset, run_profancy, node_idx, N,
                            label=f'PROFANCY/{label}')
@@ -167,13 +181,11 @@ print(f'  Building NH eigendecomp (γ={NH_GAMMA})...', end=' ', flush=True)
 t0_nh = time.time()
 run_nh = make_nh_pro(
     A_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst,
-    RECON3D_COFACTORS, pro_nodes, NH_GAMMA, T_FIXED)
+    RECON3D_CURRENCY_METABOLITE, pro_nodes, NH_GAMMA, T_FIXED)
 print(f'{time.time()-t0_nh:.1f}s')
 
 all_t3 = {}
-for label, dset in [('HMDB+CTD', eval_set1),
-                     ('MarkerDB', eval_set2),
-                     ('SMPDB',    eval_set3)]:
+for label, dset in EVAL_SETS.items():
     t0 = time.time()
     df_nh  = run_loo_eval(dset, run_nh, node_idx, N, label=f'NH/{label}')
     all_t3[label] = {'CTQW-PRO': all_t2[label]['t=0.1'],
@@ -182,63 +194,37 @@ for label, dset in [('HMDB+CTD', eval_set1),
 
 
 # ═══════════════════════════════════════════════════════════════
-# TABLE 4 — Driven CTQW-PRO & RRF
-# Driven: seed reinforcement
-# RRF: Reciprocal Rank Fusion (NH + Driven)
+# STEP 5 — Print results (full + dedup cho Table 1–3)
 # ═══════════════════════════════════════════════════════════════
-print('\n[Table 4] Driven CTQW-PRO & RRF...')
+def _dedup_view(results_dict, label):
+    """Lọc mỗi df trong results_dict về đúng các bệnh đại diện (đã khử trùng seed-set)."""
+    keep = dedup_diseases[label]
+    return {m: (df[df['disease'].isin(keep)] if df is not None else df)
+            for m, df in results_dict.items()}
 
-driven_name  = f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}'
-run_driven   = make_driven_pro(
-    Apro_eigvals, Apro_eigvecs, idx_pro, N, N_PRO, _pro_src, _pro_dst)
-run_rrf      = make_rrf(run_nh, run_driven, k=RRF_K)
+def _print_full_and_dedup(all_t, method_order):
+    for label in EVAL_SETS:
+        print_results_table(all_t[label], label, method_order=method_order)
+        print_results_table(_dedup_view(all_t[label], label),
+                            f'{label} (dedup)', method_order=method_order)
 
-all_t4 = {}
-for label, dset in [('HMDB+CTD', eval_set1),
-                     ('MarkerDB', eval_set2),
-                     ('SMPDB',    eval_set3)]:
-    t0 = time.time()
-    df_driven = run_loo_eval(dset, run_driven, node_idx, N,
-                             label=f'Driven/{label}')
-    df_rrf    = run_loo_eval(dset, run_rrf,    node_idx, N,
-                             label=f'RRF/{label}')
-    all_t4[label] = {'CTQW-PRO': all_t2[label]['t=0.1'],
-                     driven_name: df_driven, 'RRF': df_rrf}
-    print(f'  {label}: {(time.time()-t0)/60:.1f} min')
-
-# ═══════════════════════════════════════════════════════════════
-# STEP 5 — Print results
-# ═══════════════════════════════════════════════════════════════
-# ── Tables 1–4: kết quả số liệu liền nhau ────────────────────
 print('\n' + '='*72)
 print('TABLE 1: RWR vs CTQW (G_cc)')
-for label in ['HMDB+CTD','MarkerDB','SMPDB']:
-    print_results_table(all_t1[label], label, method_order=['RWR','CTQW'])
+_print_full_and_dedup(all_t1, ['RWR', 'CTQW'])
 
 print('\n' + '='*72)
 print('TABLE 2: PROFANCY vs CTQW-PRO (G_pro)')
-for label in ['HMDB+CTD','MarkerDB','SMPDB']:
-    print_results_table(all_t2[label], label,
-                        method_order=['PROFANCY','t=0.1'])
+_print_full_and_dedup(all_t2, ['PROFANCY', 't=0.1'])
 
 print('\n' + '='*72)
 print('TABLE 3: CTQW-PRO vs NH-CTQW-PRO (G_pro)')
-for label in ['HMDB+CTD','MarkerDB','SMPDB']:
-    print_results_table(all_t3[label], label,
-                        method_order=['CTQW-PRO', f'NH γ={NH_GAMMA}'])
-
-print('\n' + '='*72)
-print('TABLE 4: CTQW-PRO vs Driven vs RRF (G_pro)')
-driven_name = f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}'
-for label in ['HMDB+CTD','MarkerDB','SMPDB']:
-    print_results_table(all_t4[label], label,
-                        method_order=['CTQW-PRO', driven_name, 'RRF'])
+_print_full_and_dedup(all_t3, ['CTQW-PRO', f'NH γ={NH_GAMMA}'])
 
 # ── Statistical analysis ──────────────────────────────────────
 print('\n' + '='*72)
 print('WILCOXON: CTQW vs RWR')
 wx_rows = []
-for label in ['HMDB+CTD','MarkerDB','SMPDB']:
+for label in EVAL_SETS:
     df_rwr  = all_t1[label].get('RWR')
     df_ctqw = all_t1[label].get('CTQW')
     if df_rwr is not None and df_ctqw is not None:
@@ -247,7 +233,7 @@ for label in ['HMDB+CTD','MarkerDB','SMPDB']:
         if df_wx0 is not None: wx_rows.append(df_wx0)
 
 print('\nWILCOXON: CTQW-PRO vs PROFANCY')
-for label in ['HMDB+CTD','MarkerDB','SMPDB']:
+for label in EVAL_SETS:
     df_p = all_t2[label].get('PROFANCY')
     df_c = all_t2[label].get('t=0.1')
     if df_p is not None and df_c is not None:
@@ -256,7 +242,7 @@ for label in ['HMDB+CTD','MarkerDB','SMPDB']:
         if df_wx is not None: wx_rows.append(df_wx)
 
 print('\nWILCOXON: NH vs CTQW-PRO')
-for label in ['HMDB+CTD','MarkerDB','SMPDB']:
+for label in EVAL_SETS:
     df_c  = all_t2[label].get('t=0.1')
     df_nh = all_t3[label].get(f'NH γ={NH_GAMMA}')
     if df_c is not None and df_nh is not None:
@@ -264,36 +250,32 @@ for label in ['HMDB+CTD','MarkerDB','SMPDB']:
                                 method_a=f'NH γ={NH_GAMMA}', method_b='CTQW-PRO')
         if df_wx2 is not None: wx_rows.append(df_wx2)
 
-print('\nWILCOXON: Driven & RRF vs CTQW-PRO')
-for label in ['HMDB+CTD','MarkerDB','SMPDB']:
-    df_c   = all_t2[label].get('t=0.1')
-    df_drv = all_t4[label].get(f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}')
-    df_rrf = all_t4[label].get('RRF')
-    if df_c is None: continue
-    if df_drv is not None:
-        df_wx3 = wilcoxon_table(df_drv, df_c, label,
-                                method_a='Driven', method_b='CTQW-PRO')
-        if df_wx3 is not None: wx_rows.append(df_wx3)
-    if df_rrf is not None:
-        df_wx4 = wilcoxon_table(df_rrf, df_c, label,
-                                method_a='RRF', method_b='CTQW-PRO')
-        if df_wx4 is not None: wx_rows.append(df_wx4)
+# Chéo đồ thị: augment pathway node giúp CTQW nhiều hơn RWR? (cùng họ phương
+# pháp, Gpro vs Gcc — Bảng 1/2 chỉ kiểm định trong-cùng-đồ-thị, đây là phần
+# còn thiếu để so PROFANCY[=RWR/Gpro] với RWR[Gcc], và CTQW-PRO[Gpro] với CTQW[Gcc])
+print('\nWILCOXON CHÉO ĐỒ THỊ: PROFANCY (Gpro) vs RWR (Gcc)')
+for label in EVAL_SETS:
+    df_wx5 = wilcoxon_table(all_t2[label]['PROFANCY'], all_t1[label]['RWR'], label,
+                            method_a='PROFANCY', method_b='RWR')
+    if df_wx5 is not None: wx_rows.append(df_wx5)
+
+print('\nWILCOXON CHÉO ĐỒ THỊ: CTQW-PRO (Gpro) vs CTQW (Gcc)')
+for label in EVAL_SETS:
+    df_wx6 = wilcoxon_table(all_t2[label]['t=0.1'], all_t1[label]['CTQW'], label,
+                            method_a='CTQW-PRO', method_b='CTQW')
+    if df_wx6 is not None: wx_rows.append(df_wx6)
 
 # Bootstrap CI — tất cả methods
 print('\n--- Bootstrap 95% CI ---')
-import numpy as np
-_datasets = ['HMDB+CTD','MarkerDB','SMPDB']
 _ci_sources = [
     ('PROFANCY',          lambda l: all_t2[l].get('PROFANCY')),
     ('CTQW-PRO',          lambda l: all_t2[l].get('t=0.1')),
     (f'NH γ={NH_GAMMA}', lambda l: all_t3[l].get(f'NH γ={NH_GAMMA}')),
-    ('Driven',            lambda l: all_t4[l].get(f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}')),
-    ('RRF',               lambda l: all_t4[l].get('RRF')),
 ]
 for met in ['auc','mrr','r@20']:
     print(f'\n  {met.upper()}:')
     for mname, get_df in _ci_sources:
-        for label in _datasets:
+        for label in EVAL_SETS:
             df = get_df(label)
             if df is None or df.empty: continue
             mean, lo, hi = bootstrap_ci(df, met)
@@ -308,10 +290,6 @@ _win_pairs = [
      'PROFANCY', lambda l: all_t2[l].get('PROFANCY')),
     (f'NH γ={NH_GAMMA}', lambda l: all_t3[l].get(f'NH γ={NH_GAMMA}'),
      'CTQW-PRO',         lambda l: all_t2[l].get('t=0.1')),
-    ('Driven',  lambda l: all_t4[l].get(f'driven_s{DRIVEN_N_STEPS}_a{DRIVEN_ALPHA}'),
-     'CTQW-PRO',lambda l: all_t2[l].get('t=0.1')),
-    ('RRF',     lambda l: all_t4[l].get('RRF'),
-     'CTQW-PRO',lambda l: all_t2[l].get('t=0.1')),
 ]
 wc_rows = []
 print('\n--- Win counts ---')
@@ -320,7 +298,7 @@ print(f"  {'Pair':<28} {'Dataset':<10} {'Metric':<6} "
 print('  ' + '-'*68)
 for name_a, get_a, name_b, get_b in _win_pairs:
     for metric in ['auc', 'mrr']:
-        for label in ['HMDB+CTD','MarkerDB','SMPDB']:
+        for label in EVAL_SETS:
             df_a = get_a(label); df_b = get_b(label)
             if df_a is None or df_b is None: continue
             w = win_counts(df_a, df_b, metric, name_a=name_a, name_b=name_b)
@@ -339,12 +317,11 @@ for name_a, get_a, name_b, get_b in _win_pairs:
 # ═══════════════════════════════════════════════════════════════
 print('\nSaving...')
 all_rows = []
-# CTQW-PRO trong all_t3/all_t4 là alias của all_t2 → skip để tránh duplicate
-_skip = {'table3': {'CTQW-PRO'}, 'table4': {'CTQW-PRO'}}
+# CTQW-PRO trong all_t3 là alias của all_t2 → skip để tránh duplicate
+_skip = {'table3': {'CTQW-PRO'}}
 for tname, results in [('table1', all_t1),
                         ('table2', all_t2),
-                        ('table3', all_t3),
-                        ('table4', all_t4)]:
+                        ('table3', all_t3)]:
     for label, res in results.items():
         for mname, df in res.items():
             if df is None or df.empty: continue
