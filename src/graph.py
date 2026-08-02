@@ -226,9 +226,9 @@ def compute_eigendecomp(A, cache_path=None, force=False):
 
 def build_clean_gpro(G_pro, node_idx, pathway_mets, cofactors):
     """
-    G_pro với RECON3D_COFACTORS removed.
+    G_pro với RECON3D_CURRENCY_METABOLITE removed.
     Dùng cho ablation study (02_ablation_graph.py).
-    cofactors: set of node IDs (RECON3D_COFACTORS).
+    cofactors: set of node IDs (RECON3D_CURRENCY_METABOLITE).
     """
     G_clean = nx.Graph()
     for nd in G_pro.nodes():
@@ -257,3 +257,4 @@ def build_clean_gpro(G_pro, node_idx, pathway_mets, cofactors):
     return (G_cc_cln, pro_nodes_cln, len(pro_nodes_cln), idx_pro_cln,
             A_pro_cln, deg_pro_cln, _pro_src_cln, _pro_dst_cln,
             node_idx_cln, N_cln)
+

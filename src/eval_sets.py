@@ -3,9 +3,9 @@ eval_sets.py — Build 3 evaluation sets.
 Exact từ notebook Cells 3 (HMDB+CTD), 4 (MarkerDB), 5 (SMPDB).
 
 CRITICAL correctness notes:
-- eval_set1/2/3: filter `base in RECON3D_COFACTORS or normalize_name(name) in COFACTORS`
+- eval_set1/2/3: filter `base in RECON3D_CURRENCY_METABOLITE or normalize_name(name) in COFACTORS`
   (ĐỒNG NHẤT cho cả 3 eval set — patch 2026-07: trước đây eval_set3 chỉ lọc theo
-  RECON3D_COFACTORS bằng node ID, không lọc theo tên COFACTORS như set1/2. Đã kiểm
+  RECON3D_CURRENCY_METABOLITE bằng node ID, không lọc theo tên COFACTORS như set1/2. Đã kiểm
   chứng bằng thực nghiệm: áp thêm name-filter cho SMPDB không thay đổi kết quả
   (Jaccard=1.0 trên toàn bộ 153/153 bệnh, 0 metabolite bị loại thêm) — nên patch này
   không ảnh hưởng số liệu đã báo cáo trước đó, chỉ để đồng bộ logic cho rõ ràng.
@@ -25,7 +25,7 @@ from config import (
     PATH_SMPDB_PW, PATH_SMPDB_MET,
     SMPDB_MET_DIR, SMPDB_PW_DIR,
     CACHE_DIR, BASE_DIR,
-    RECON3D_COFACTORS, COFACTORS_FALLBACK,
+    RECON3D_CURRENCY_METABOLITE, COFACTORS_FALLBACK,
     GENERIC_DISEASES, ALLOWED_STATUSES, MIN_METS,
 )
 from utils import standardize_hmdb_id, normalize_name, normalize_chem_aggressive
@@ -150,8 +150,8 @@ def build_eval_set1(hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
     Exact từ notebook Cell 3.
 
     CRITICAL:
-    - HMDB filter: `base in RECON3D_COFACTORS or normalize_name(m['name']) in COFACTORS`
-    - CTD filter:  `base in RECON3D_COFACTORS` + `normalize_name(chem) in COFACTORS`
+    - HMDB filter: `base in RECON3D_CURRENCY_METABOLITE or normalize_name(m['name']) in COFACTORS`
+    - CTD filter:  `base in RECON3D_CURRENCY_METABOLITE` + `normalize_name(chem) in COFACTORS`
     - CTD parsing: split(',') + pts[5] DirectEvidence contains 'marker'
     """
     hmdb_name_to_id      = hmdb_lookups['name_to_id']
@@ -166,7 +166,7 @@ def build_eval_set1(hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
         base = hmdb_to_recon.get(hid)
         if not base or base not in node_idx: continue
         # Exact cofactor check from notebook
-        if base in RECON3D_COFACTORS or normalize_name(m['name']) in COFACTORS:
+        if base in RECON3D_CURRENCY_METABOLITE or normalize_name(m['name']) in COFACTORS:
             continue
         for dz in m['diseases_assoc'] + m['diseases_biomarker']:
             dn = normalize_name(dz['name'])
@@ -223,7 +223,7 @@ def build_eval_set1(hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
     gt_ctd = defaultdict(set)
     for _, row in df_ctd.iterrows():
         base = ctd_map(row['ChemicalName'], row.get('CAS', ''))
-        if not base or base in RECON3D_COFACTORS: continue
+        if not base or base in RECON3D_CURRENCY_METABOLITE: continue
         # Exact from notebook
         if normalize_name(row['ChemicalName']) in COFACTORS: continue
         dn = normalize_name(row['DiseaseName'])
@@ -346,7 +346,7 @@ def build_eval_set2(hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
                  normalize_chem_aggressive(m['name']))
             if hm: base = hmdb_to_recon.get(hm)
         if not base or base not in node_idx: continue
-        if base in RECON3D_COFACTORS or normalize_name(m['name']) in COFACTORS:
+        if base in RECON3D_CURRENCY_METABOLITE or normalize_name(m['name']) in COFACTORS:
             continue
         for cond in m['conditions']:
             cn = normalize_name(cond)
@@ -429,8 +429,8 @@ def build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx,
     Exact từ notebook Cell 5.
 
     Cofactor filter — ĐỒNG NHẤT với eval_set1/2 (patch 2026-07):
-        `base in RECON3D_COFACTORS or normalize_name(name) in COFACTORS`
-    Trước patch này, eval_set3 chỉ lọc theo RECON3D_COFACTORS (node ID),
+        `base in RECON3D_CURRENCY_METABOLITE or normalize_name(name) in COFACTORS`
+    Trước patch này, eval_set3 chỉ lọc theo RECON3D_CURRENCY_METABOLITE (node ID),
     không lọc theo tên (COFACTORS) như eval_set1/2. Đã kiểm chứng thực
     nghiệm (04_check_smpdb_cofactor_filter.py): áp thêm name-filter cho
     SMPDB cho Jaccard=1.0 trên 153/153 bệnh, 0 metabolite bị loại thêm —
@@ -500,7 +500,7 @@ def build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx,
                 if hmdb_status_cache.get(hid,'').strip().lower() in ALLOWED_STATUSES}
         if kept: smpdb_filt[pw_name] = kept
 
-    # Map HMDB → Recon3D — lọc cả RECON3D_COFACTORS (ID) và COFACTORS (tên),
+    # Map HMDB → Recon3D — lọc cả RECON3D_CURRENCY_METABOLITE (ID) và COFACTORS (tên),
     # đồng nhất với build_eval_set1/2 (patch 2026-07).
     smpdb_nodes = {}
     for pw_name, hmdb_ids in smpdb_filt.items():
@@ -509,7 +509,7 @@ def build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx,
             base = hmdb_to_recon.get(hid)
             if not base or base not in node_idx: continue
             # Exact cofactor check, đồng nhất với build_eval_set1/2
-            if base in RECON3D_COFACTORS or normalize_name(
+            if base in RECON3D_CURRENCY_METABOLITE or normalize_name(
                     hmdb_metabolites.get(hid, {}).get('name', '')) in COFACTORS:
                 continue
             mnodes.add(base)
@@ -591,3 +591,4 @@ def build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx,
         if len(mnodes) >= min_mets
     }
     return eval_set3
+

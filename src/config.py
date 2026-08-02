@@ -32,7 +32,7 @@ RANDOM_SEED = 42
 METRIC_KEYS_FULL = ['auc', 'mrr', 'rank', 'r@5', 'r@10', 'r@20', 'r@50']
 
 # Exact từ notebook Cell 3
-RECON3D_COFACTORS = {
+RECON3D_CURRENCY_METABOLITE = {
     'nad', 'nadh', 'nadp', 'nadph', 'fad', 'fadh2', 'coa', 'accoa',
     'atp', 'adp', 'amp', 'gtp', 'gdp', 'gmp', 'ctp', 'cdp', 'cmp',
     'utp', 'udp', 'ump', 'h', 'h2o', 'co2', 'o2', 'pi', 'ppi',
@@ -57,3 +57,4 @@ ALLOWED_STATUSES = {'detected', 'quantified', 'detected and quantified'}
 N_JOBS = os.cpu_count()
 for _env in ['OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS']:
     os.environ.setdefault(_env, str(N_JOBS))
+
