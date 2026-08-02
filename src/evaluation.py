@@ -67,6 +67,7 @@ def run_loo_eval(disease_set, method_fn, node_idx, N, label=''):
     method_fn(seed_nodes) → scores (N,)
     """
     rows = []
+    _err_printed = False   # DEBUG: in exception đầu tiên gặp phải, tránh spam log
     for disease, mets in tqdm(disease_set.items(), desc=label or 'LOO'):
         valid = [m for m in mets if m in node_idx]
         if len(valid) < 3: continue
@@ -81,8 +82,13 @@ def run_loo_eval(disease_set, method_fn, node_idx, N, label=''):
                 scores = method_fn(seeds)
                 m = compute_metrics(scores, test_idx, seed_idx_set, _n=N)
                 if m: loo_res.append(m)
-            except Exception:
-                pass
+            except Exception as e:
+                if not _err_printed:
+                    import traceback
+                    print(f'\n  [DEBUG {label}] EXCEPTION on disease={disease!r}, '
+                          f'test_met={test_met!r}: {type(e).__name__}: {e}')
+                    traceback.print_exc()
+                    _err_printed = True
         if loo_res:
             row = {k: float(np.mean([r[k] for r in loo_res]))
                    for k in METRIC_KEYS_FULL}
@@ -101,7 +107,9 @@ def wilcoxon_table(df_a, df_b, label,
     Bonferroni: p_bonf = min(p * len(metrics), 1.0)
     """
     if metrics is None:
-        metrics = ['auc','mrr','r@5','r@10','r@20','r@50']
+        # Lấy từ METRIC_KEYS_FULL (config.py) thay vì hardcode riêng — tránh
+        # lệch khi METRIC_KEYS_FULL đổi (vd. bỏ r@50) mà chỗ này không cập nhật.
+        metrics = [k for k in METRIC_KEYS_FULL if k != 'rank']
 
     shared = sorted(set(df_a['disease']) & set(df_b['disease']))
     if len(shared) < 5:
