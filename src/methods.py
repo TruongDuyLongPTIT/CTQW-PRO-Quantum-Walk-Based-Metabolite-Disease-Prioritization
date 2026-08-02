@@ -122,7 +122,7 @@ def make_ctqw_pro(eigvals, eigvecs, idx_pro, N, N_PRO, _pro_src, _pro_dst):
 # ══════════════════════════════════════════════════════════════
 
 def make_nh_pro(A_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst,
-                cofactors, pro_nodes, gamma, t=T_FIXED):
+                CURRENCY_METABOLITE, pro_nodes, gamma, t=T_FIXED):
     """
     NH-CTQW-PRO: H_eff = A_pro - i·γ·diag(cofactor_vec)
     Imaginary decay tại cofactor nodes → suppress hub bias.
@@ -130,7 +130,7 @@ def make_nh_pro(A_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst,
 
     Returns run_nh(seed_nodes) → scores (N,).
     """
-    cof_set = set(cofactors)
+    cof_set = set(CURRENCY_METABOLITE)
 
     # Diagonal indexing — tránh tạo N×N matrix không cần thiết
     H_eff = A_pro.astype(complex)
@@ -201,4 +201,5 @@ def make_rrf(fn_a, fn_b, k=60):
         rb = _rankdata(-fn_b(seed_nodes), method='average')
         return 1.0 / (k + ra) + 1.0 / (k + rb)
     return run_rrf
+
 

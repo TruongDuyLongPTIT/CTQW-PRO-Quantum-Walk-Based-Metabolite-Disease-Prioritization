@@ -43,3 +43,4 @@ def short_inchikey(ik: str) -> str:
     parts = ik.split('-')
     return parts[0] if parts else ''
 
+

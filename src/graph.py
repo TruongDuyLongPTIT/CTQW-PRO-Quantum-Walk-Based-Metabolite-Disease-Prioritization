@@ -222,19 +222,19 @@ def compute_eigendecomp(A, cache_path=None, force=False):
     return eigvals, eigvecs
 
 
-# ── Clean G_pro (cofactors removed) — for ablation study ─────────────────────
+# ── Clean G_pro (CURRENCY_METABOLITE removed) — for ablation study ─────────────────────
 
-def build_clean_gpro(G_pro, node_idx, pathway_mets, cofactors):
+def build_clean_gpro(G_pro, node_idx, pathway_mets, CURRENCY_METABOLITE):
     """
     G_pro với RECON3D_CURRENCY_METABOLITE removed.
     Dùng cho ablation study (02_ablation_graph.py).
-    cofactors: set of node IDs (RECON3D_CURRENCY_METABOLITE).
+    CURRENCY_METABOLITE: set of node IDs (RECON3D_CURRENCY_METABOLITE).
     """
     G_clean = nx.Graph()
     for nd in G_pro.nodes():
-        if nd not in cofactors: G_clean.add_node(nd)
+        if nd not in CURRENCY_METABOLITE: G_clean.add_node(nd)
     for u, v in G_pro.edges():
-        if u not in cofactors and v not in cofactors:
+        if u not in CURRENCY_METABOLITE and v not in CURRENCY_METABOLITE:
             G_clean.add_edge(u, v)
 
     ccs = sorted(nx.connected_components(G_clean), key=len, reverse=True)
@@ -257,4 +257,5 @@ def build_clean_gpro(G_pro, node_idx, pathway_mets, cofactors):
     return (G_cc_cln, pro_nodes_cln, len(pro_nodes_cln), idx_pro_cln,
             A_pro_cln, deg_pro_cln, _pro_src_cln, _pro_dst_cln,
             node_idx_cln, N_cln)
+
 

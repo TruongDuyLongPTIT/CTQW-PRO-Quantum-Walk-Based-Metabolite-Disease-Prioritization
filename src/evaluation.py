@@ -214,3 +214,4 @@ def print_results_table(results_dict, label, method_order=None):
               f"{df['r@5'].mean():>7.4f} {df['r@10'].mean():>7.4f} "
               f"{df['r@20'].mean():>7.4f}{mark}")
 
+

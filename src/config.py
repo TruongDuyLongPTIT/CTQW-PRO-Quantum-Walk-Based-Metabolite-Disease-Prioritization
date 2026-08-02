@@ -38,7 +38,7 @@ RECON3D_CURRENCY_METABOLITE = {
     'utp', 'udp', 'ump', 'h', 'h2o', 'co2', 'o2', 'pi', 'ppi',
     'hco3', 'nh4', 'so4',
 }
-COFACTORS_FALLBACK = {
+CURRENCY_METABOLITE_FALLBACK = {
     'h2o','h','h+','oh-','na+','k+','cl-','ca2+','mg2+','fe2+','fe3+',
     'atp','adp','amp','gtp','gdp','gmp','ctp','cdp','cmp',
     'utp','udp','ump','ttp','tdp','tmp',
@@ -57,4 +57,5 @@ ALLOWED_STATUSES = {'detected', 'quantified', 'detected and quantified'}
 N_JOBS = os.cpu_count()
 for _env in ['OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS']:
     os.environ.setdefault(_env, str(N_JOBS))
+
 
