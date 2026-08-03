@@ -1,35 +1,12 @@
-"""
-03_mechanism_experiments.py — Mechanism experiments cho paper CTQW-PRO.
-
-2 experiments (bằng chứng cơ chế, Mục 4.3):
-  EXP 1 — Currency-metabolite rank bias ← PROFANCY bị chi phối bởi degree (Bằng chứng thứ nhất, Mục 4.3.1)
-  EXP 2 — Dephasing walk                ← coherence is essential (Bằng chứng thứ tư, Mục 4.3.2)
-"""
-import sys, time
-from pathlib import Path
-_src = Path(__file__).resolve().parent.parent / 'src'
-if _src.exists() and str(_src) not in sys.path:
-    sys.path.insert(0, str(_src))
-
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr, wilcoxon, ttest_rel
-
-from config import (RESULTS_DIR, CACHE_DIR, T_FIXED, RANDOM_SEED,
-                    RECON3D_CURRENCY_METABOLITE)
-from graph import (parse_recon3d, build_gcc, build_gpro,
-                   build_hmdb_to_recon_initial, augment_hmdb_to_recon,
-                   compute_eigendecomp)
-from eval_sets import (parse_hmdb, build_hmdb_lookups, build_CURRENCY_METABOLITE_set,
-                       build_eval_set1, build_eval_set3)
+from config import CACHE_DIR, T_FIXED, RECON3D_CURRENCY_METABOLITE
+from graph import (parse_recon3d, build_gcc, build_gpro, build_hmdb_to_recon_initial, augment_hmdb_to_recon, compute_eigendecomp)
+from eval_sets import (parse_hmdb, build_hmdb_lookups, build_CURRENCY_METABOLITE_set, build_eval_set1, build_eval_set3)
 from methods import make_ctqw_pro, make_profancy
-from evaluation import run_loo_eval, wilcoxon_table, compute_metrics
 
-RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-
-# ═══════════════════════════════════════════════════
-# SETUP
-# ════════════════════════════════════════════════
+# ---------SETUP--------------
 print('='*60)
 print('Setup...')
 recon_data   = parse_recon3d()
@@ -67,19 +44,9 @@ run_ctqw     = make_ctqw_pro(Apro_eigvals, Apro_eigvecs, idx_pro, N, N_PRO,
                               _pro_src, _pro_dst)
 ctqw_fn      = lambda seeds: run_ctqw(seeds, [T_FIXED])[T_FIXED]
 
-_ph0 = np.exp(-1j * Apro_eigvals * T_FIXED)   # reused across EXPs
-
 dset_by_label = {'HMDB+CTD': eval_set1, 'SMPDB': eval_set3}
 
-
-# ═══════════════════════════════════════════════════════════════
-# EXP 1 — Currency-metabolite rank bias (Bằng chứng thứ nhất, Mục 4.3.1 paper)
-# Percentile rank trung bình của currency metabolite trong candidate set
-# (PROFANCY vs CTQW-PRO), và tương quan Spearman giữa node degree và score
-# của CẢ HAI phương pháp — xác nhận "PROFANCY bị chi phối bởi degree nhiều
-# hơn CTQW-PRO" (Bảng 8 paper cần rho của cả PROFANCY lẫn CTQW-PRO).
-# percentile 0% = xếp hạng cao nhất; 100% = thấp nhất.
-# ═══════════════════════════════════════════════════════════════
+# ------------EXP 1 — Currency-metabolite rank bias -----------------
 print('\n' + '='*60)
 print('EXP 1: Currency-metabolite rank bias (PROFANCY vs CTQW-PRO)')
 
@@ -87,7 +54,6 @@ cm_in_graph = [nd for nd in RECON3D_CURRENCY_METABOLITE if nd in idx_pro and nd 
 print(f'  {len(cm_in_graph)}/{len(RECON3D_CURRENCY_METABOLITE)} currency metabolite có trong G_pro')
 
 def percentile_ranks(score_vec, cand, cm_set):
-    """percentile=0 là hạng cao nhất. score_vec: kích thước N (không gian G_cc)."""
     s = np.array([score_vec[node_idx[nd]] for nd in cand])
     order = np.argsort(-s)
     rank_of = {cand[order[i]]: i for i in range(len(cand))}
