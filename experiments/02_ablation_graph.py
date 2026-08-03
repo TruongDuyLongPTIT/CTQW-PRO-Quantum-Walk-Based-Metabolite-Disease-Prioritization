@@ -1,30 +1,16 @@
-"""
-02_ablation_graph.py — Ablation: currency-metabolite filtering effect.
-
-+ Wilcoxon signed-rank ghép cặp theo bệnh (gốc vs đã loại currency metabolite),
-  cho PROFANCY và CTQW-PRO — bổ sung p-value còn thiếu cho Bảng 9 (paper).
-"""
-import sys, time
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
-
+import time
 import numpy as np
-import pandas as pd
-
-from config import (RESULTS_DIR, CACHE_DIR, T_FIXED, RECON3D_CURRENCY_METABOLITE, MIN_METS)
-from graph import (parse_recon3d, build_gcc, build_gpro, build_clean_gpro,
-                   build_hmdb_to_recon_initial, augment_hmdb_to_recon, compute_eigendecomp)
-from eval_sets import (parse_hmdb, build_hmdb_lookups, build_CURRENCY_METABOLITE_set,
-                       build_eval_set1, build_eval_set2, build_eval_set3)
+from config import CACHE_DIR, T_FIXED, RECON3D_CURRENCY_METABOLITE
+from graph import (parse_recon3d, build_gcc, build_gpro, build_clean_gpro, build_hmdb_to_recon_initial, augment_hmdb_to_recon, compute_eigendecomp)
+from eval_sets import (parse_hmdb, build_hmdb_lookups, build_CURRENCY_METABOLITE_set,build_eval_set1, build_eval_set2, build_eval_set3)
 from methods import make_profancy, make_ctqw_pro
 from evaluation import run_loo_eval, wilcoxon_table
 
-RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 print('Building graphs...')
 recon_data   = parse_recon3d()
-G_cc, graph_nodes, N, node_idx, A_cc, degrees = build_gcc(recon_data)
+G_cc, _, N, node_idx, A_cc, _ = build_gcc(recon_data)
 met_info     = recon_data['met_info']
 pathway_mets = recon_data['pathway_mets']
 
@@ -89,8 +75,7 @@ for label, dset in EVAL_SETS.items():
 def _f(df, m):
     return f'{df[m].mean():.4f}' if df is not None and not df.empty else 'N/A'
 
-# (tên hiển thị, cột gốc, cột đã loại currency metabolite) — dùng chung cho
-# bảng print và kiểm định Wilcoxon bên dưới
+
 PAIRS = [('PROFANCY', 'PROFANCY_orig', 'PROFANCY_cln'),
          ('CTQW-PRO', 'CTQW_orig',     'CTQW_cln')]
 
@@ -110,30 +95,11 @@ for label in EVAL_SETS:
         print(f'{nm:<16} {_f(df_o,"auc"):>10} {_f(df_o,"mrr"):>10} '
               f'{_f(df_c,"auc"):>10} {_f(df_c,"mrr"):>10} {delta:>+8.4f}')
 
-# Wilcoxon signed-rank ghép cặp theo bệnh — bổ sung p-value cho Bảng 9 (paper),
-# tái dùng wilcoxon_table() thay vì tự viết lại kiểm định
+
 print('\n'+'='*72+'\nWILCOXON: gốc vs đã loại currency metabolite (ghép cặp theo bệnh)')
-wx_rows = []
 for label in EVAL_SETS:
     res = all_results[label]
     for nm, ko, kc in PAIRS:
         df_o, df_c = res.get(ko), res.get(kc)
         if df_o is None or df_c is None: continue
-        df_wx = wilcoxon_table(df_c, df_o, label,
-                               method_a=f'{nm}_clean', method_b=f'{nm}_orig')
-        if df_wx is not None: wx_rows.append(df_wx)
-
-rows = []
-for label, res in all_results.items():
-    for mname, df in res.items():
-        if df is None or df.empty: continue
-        d = df.copy(); d['method']=mname; d['source']=label; rows.append(d)
-if rows:
-    out = RESULTS_DIR/'ablation_graph.csv'
-    pd.concat(rows, ignore_index=True).to_csv(out, index=False)
-    print(f'\nSaved: {out}')
-if wx_rows:
-    out_wx = RESULTS_DIR/'ablation_wilcoxon.csv'
-    pd.concat(wx_rows, ignore_index=True).to_csv(out_wx, index=False)
-    print(f'Saved: {out_wx}')
-print('Done.')
+        wilcoxon_table(df_c, df_o, label, method_a=f'{nm}_clean', method_b=f'{nm}_orig')
