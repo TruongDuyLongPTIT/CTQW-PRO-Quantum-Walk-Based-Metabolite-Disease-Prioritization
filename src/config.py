@@ -1,6 +1,3 @@
-"""
-config.py — Single source of truth. Exact từ notebook Cell 1.
-"""
 import os
 from pathlib import Path
 

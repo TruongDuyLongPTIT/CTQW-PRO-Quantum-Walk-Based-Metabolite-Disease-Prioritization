@@ -3,7 +3,8 @@
   Supplementary S2 — CTQW-PRO t grid search
 """
 import pandas as pd
-import time
+import sys, time
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 import warnings; warnings.filterwarnings('ignore')
 from graph import (parse_recon3d, build_gcc, build_gpro, build_hmdb_to_recon_initial, augment_hmdb_to_recon, compute_eigendecomp)
 from eval_sets import (parse_hmdb, build_hmdb_lookups, build_CURRENCY_METABOLITE_set, build_eval_set1, build_eval_set3)

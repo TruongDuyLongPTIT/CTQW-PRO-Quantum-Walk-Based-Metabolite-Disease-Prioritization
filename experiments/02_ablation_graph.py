@@ -1,4 +1,5 @@
-import time
+import sys, time
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 import numpy as np
 from config import CACHE_DIR, T_FIXED, RECON3D_CURRENCY_METABOLITE
 from graph import (parse_recon3d, build_gcc, build_gpro, build_clean_gpro, build_hmdb_to_recon_initial, augment_hmdb_to_recon, compute_eigendecomp)
