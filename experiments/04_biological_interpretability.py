@@ -1,42 +1,10 @@
-"""
-06_biological_interpretability.py — Biological interpretability analysis.
-
-Dùng NH-CTQW-PRO (full-seed mode) để predict top-20 metabolites
-cho 4 selected SMPDB diseases.
-
-Output:
-  1. Seeds list cho mỗi disease
-  2. Top-20 predictions với HMDB ID
-  3. CSV: RESULTS_DIR/biological_interpretability.csv
-
-Classification (ESTABLISHED / POTENTIAL / NOVEL) cần được điền
-thủ công sau khi đọc literature — xem cột 'tier' trong CSV,
-mặc định là 'UNVERIFIED'.
-
-Usage:
-  python 06_biological_interpretability.py
-"""
-import sys, time
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
-
-import numpy as np
-import pandas as pd
-
-from config import (RESULTS_DIR, CACHE_DIR, T_FIXED,
-                    NH_GAMMA, RECON3D_CURRENCY_METABOLITE)
-from graph import (parse_recon3d, build_gcc, build_gpro,
-                   build_hmdb_to_recon_initial, augment_hmdb_to_recon,
-                   compute_eigendecomp)
-from eval_sets import (parse_hmdb, build_hmdb_lookups,
-                       build_CURRENCY_METABOLITE_set, build_eval_set3)
+import time
+from config import CACHE_DIR, T_FIXED, NH_GAMMA, RECON3D_CURRENCY_METABOLITE
+from graph import (parse_recon3d, build_gcc, build_gpro, build_hmdb_to_recon_initial, augment_hmdb_to_recon, compute_eigendecomp)
+from eval_sets import (parse_hmdb, build_hmdb_lookups, build_CURRENCY_METABOLITE_set, build_eval_set3)
 from methods import make_nh_pro
 
-RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-
-# ══════════════════════════════════════════════════════════════════
-# SELECTED DISEASES
-# ══════════════════════════════════════════════════════════════════
+# --------SELECTED DISEASES-----------
 DISEASES = {
     "LNS":  "Lesch-Nyhan Syndrome (LNS)",
     "AKU":  "Alkaptonuria",
@@ -45,15 +13,7 @@ DISEASES = {
 }
 TOP_K = 20
 
-def hmdb_link(hmdb_id):
-    """Generate HMDB metabolite page URL."""
-    if not hmdb_id:
-        return ""
-    return f"https://hmdb.ca/metabolites/{hmdb_id}"
-
-# ══════════════════════════════════════════════════════════════════
-# SETUP
-# ══════════════════════════════════════════════════════════════════
+# -----------SETUP-------------------
 print('='*65)
 print('06 — Biological Interpretability Analysis')
 print('='*65)
@@ -63,8 +23,7 @@ G_cc, graph_nodes, N, node_idx, A_cc, degrees = build_gcc(recon_data)
 met_info     = recon_data['met_info']
 pathway_mets = recon_data['pathway_mets']
 
-(G_pro, pro_nodes, N_PRO, idx_pro,
- A_pro, deg_pro, _pro_src, _pro_dst) = build_gpro(G_cc, node_idx, pathway_mets)
+(G_pro, pro_nodes, N_PRO, idx_pro, A_pro, deg_pro, _pro_src, _pro_dst) = build_gpro(G_cc, node_idx, pathway_mets)
 
 eigvals, eigvecs = compute_eigendecomp(A_pro, CACHE_DIR / 'gpro_eigdecomp.npz')
 
@@ -92,9 +51,7 @@ for nd, i in node_idx.items():
     if nd in cm_set or nd_b in cm_set:
         cm_gcc_idx.add(i)
 
-# ══════════════════════════════════════════════════════════════════
-# BUILD NH-CTQW-PRO
-# ══════════════════════════════════════════════════════════════════
+# -------------BUILD NH-CTQW-PRO------------------
 print(f'Building NH-CTQW-PRO (γ={NH_GAMMA}, t={T_FIXED})...', end=' ', flush=True)
 t0 = time.time()
 run_nh = make_nh_pro(
@@ -102,16 +59,8 @@ run_nh = make_nh_pro(
     RECON3D_CURRENCY_METABOLITE, pro_nodes, NH_GAMMA, T_FIXED)
 print(f'{time.time()-t0:.1f}s')
 
-# ══════════════════════════════════════════════════════════════════
-# PREDICT PER DISEASE
-# ══════════════════════════════════════════════════════════════════
-all_rows = []
-
+# ------------PREDICT PER DISEASE-------------
 for disease_key, disease_name in DISEASES.items():
-    if disease_name not in eval_set3:
-        print(f'\nWARNING: {disease_name} not found in SMPDB')
-        continue
-
     known_mets  = eval_set3[disease_name]
     valid_seeds = [m for m in known_mets if m in node_idx]
     seed_idx    = {node_idx[s] for s in valid_seeds}
@@ -120,16 +69,16 @@ for disease_key, disease_name in DISEASES.items():
     print(f'DISEASE: {disease_name}  [{disease_key}]')
     print(f'{"="*65}')
 
-    # ── Seeds ─────────────────────────────────────────────────────
+    # ------------------ Seeds -----------------
     print(f'\nSeeds (n={len(valid_seeds)}) — known disease metabolites:')
-    print(f"  {'#':>3}  {'Name':<50}  {'HMDB':>13}  {'HMDB link'}")
-    print('  ' + '-'*95)
+    print(f"  {'#':>3}  {'Name':<50}  {'HMDB':>13}")
+    print('  ' + '-'*70)
     for i, s in enumerate(valid_seeds, 1):
         sname = met_info.get(s, {}).get('name', s)
         hmdb  = recon_to_hmdb.get(s, [''])[0]
-        print(f"  {i:>3}. {sname:<50}  {hmdb:>13}  {hmdb_link(hmdb)}")
+        print(f"  {i:>3}. {sname:<50}  {hmdb:>13}")
 
-    # ── Predict ───────────────────────────────────────────────────
+    # ----------Predict -------------
     scores = run_nh(valid_seeds)
 
     candidates = []
@@ -148,41 +97,10 @@ for disease_key, disease_name in DISEASES.items():
     candidates.sort(key=lambda x: -x['score'])
     top = candidates[:TOP_K]
 
-    # ── Print predictions ─────────────────────────────────────────
+    # ----------- Print predictions -----------------
     print(f'\nTop-{TOP_K} predictions (NH-CTQW-PRO, full-seed mode):')
     print(f"  {'Rank':>4}  {'Name':<50}  {'HMDB':>13}  {'Score':>10}")
     print('  ' + '-'*80)
 
     for i, c in enumerate(top, 1):
         print(f"  {i:>4}. {c['name']:<50}  {c['hmdb_id']:>13}  {c['score']:>10.6f}")
-
-        all_rows.append({
-            'disease_key':     disease_key,
-            'disease_name':    disease_name,
-            'rank':            i,
-            'recon_id':        c['recon_id'],
-            'name':            c['name'],
-            'hmdb_id':         c['hmdb_id'],
-            'hmdb_url':        hmdb_link(c['hmdb_id']),
-            'score':           c['score'],
-            # Tier to be filled manually after literature review:
-            # ESTABLISHED = measured in patient samples (cite PMID)
-            # POTENTIAL   = mechanistically plausible, indirect evidence
-            # NOVEL       = no prior literature connection
-            'tier':            'UNVERIFIED',
-            'pmid':            '',
-            'direct_quote':    '',
-            'notes':           '',
-        })
-
-# ══════════════════════════════════════════════════════════════════
-# SAVE
-# ══════════════════════════════════════════════════════════════════
-df = pd.DataFrame(all_rows)
-out = RESULTS_DIR / 'biological_interpretability.csv'
-df.to_csv(out, index=False)
-
-print('\n' + '='*65)
-print(f'Saved: {out}  ({len(df)} predictions, {len(DISEASES)} diseases × {TOP_K})')
-print('Next: fill tier/pmid/direct_quote/notes columns after literature review.')
-print('Done.')
