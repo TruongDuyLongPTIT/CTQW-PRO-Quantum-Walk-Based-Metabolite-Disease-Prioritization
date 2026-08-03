@@ -1,6 +1,3 @@
-"""
-graph.py — Build G_cc và G_pro từ Recon3D.
-"""
 import json, pickle, re, time
 from collections import defaultdict
 from pathlib import Path
@@ -9,16 +6,9 @@ import networkx as nx
 import numpy as np
 
 from config import PATH_RECON3D, CACHE_DIR
-from utils import (standardize_hmdb_id,
-                   normalize_name, normalize_chem_aggressive, short_inchikey)
-
-
-# ── Parse Recon3D ─────────────────────────────────────────────────────────────
+from utils import (standardize_hmdb_id, normalize_name, normalize_chem_aggressive, short_inchikey)
 
 def parse_recon3d(force=False):
-    """
-    Returns: dict với G, met_info, rxn_info, pathway_mets
-    """
     cache_path = CACHE_DIR / 'recon3d_parsed_v2.pkl'
     if cache_path.exists() and not force:
         with open(cache_path, 'rb') as f:
@@ -104,8 +94,6 @@ def parse_recon3d(force=False):
     return data
 
 
-# ── Build G_cc ────────────────────────────────────────────────────────────────
-
 def build_gcc(recon_data):
     """Exact từ notebook Cell 2."""
     G   = recon_data['G']
@@ -119,12 +107,7 @@ def build_gcc(recon_data):
     return G_cc, graph_nodes, N, node_idx, A_cc, degrees
 
 
-# ── Build hmdb_to_recon (initial + augmentation) ─────────────────────────────
-
 def build_hmdb_to_recon_initial(met_info, node_idx):
-    """
-    Initial mapping: HMDB IDs từ Recon3D annotations → Recon3D base IDs.
-    """
     hmdb_to_recon = {}
     for base_id, info in met_info.items():
         if base_id not in node_idx: continue
@@ -140,12 +123,6 @@ def build_hmdb_to_recon_initial(met_info, node_idx):
 def augment_hmdb_to_recon(hmdb_to_recon, met_info, node_idx,
                            hmdb_ik_to_id, hmdb_ik_short_to_id,
                            hmdb_name_to_id, hmdb_name_aggr_to_id):
-    """
-    Augment hmdb_to_recon với IK và name matching.
-    Modifies hmdb_to_recon in-place.
-
-    Returns: (n_aug_ik, n_aug_nm)
-    """
     n_aug_ik = 0; n_aug_nm = 0
     mapped = set(hmdb_to_recon.values())
 
@@ -175,10 +152,7 @@ def augment_hmdb_to_recon(hmdb_to_recon, met_info, node_idx,
     return n_aug_ik, n_aug_nm
 
 
-# ── Build G_pro ───────────────────────────────────────────────────────────────
-
 def build_gpro(G_cc, node_idx, pathway_mets):
-    """Exact từ notebook Cell 2."""
     G_pro = G_cc.copy()
     for sub, mets_in_sub in pathway_mets.items():
         valid = [m for m in mets_in_sub if m in node_idx]
@@ -202,9 +176,6 @@ def build_gpro(G_cc, node_idx, pathway_mets):
                         dtype=np.intp)
     return G_pro, pro_nodes, N_PRO, idx_pro, A_pro, deg_pro, _pro_src, _pro_dst
 
-
-# ── Eigendecomposition ────────────────────────────────────────────────────────
-
 def compute_eigendecomp(A, cache_path=None, force=False):
     """
     numpy.linalg.eigh — symmetric matrix.
@@ -222,14 +193,7 @@ def compute_eigendecomp(A, cache_path=None, force=False):
     return eigvals, eigvecs
 
 
-# ── Clean G_pro (CURRENCY_METABOLITE removed) — for ablation study ─────────────────────
-
 def build_clean_gpro(G_pro, node_idx, pathway_mets, CURRENCY_METABOLITE):
-    """
-    G_pro với RECON3D_CURRENCY_METABOLITE removed.
-    Dùng cho ablation study (02_ablation_graph.py).
-    CURRENCY_METABOLITE: set of node IDs (RECON3D_CURRENCY_METABOLITE).
-    """
     G_clean = nx.Graph()
     for nd in G_pro.nodes():
         if nd not in CURRENCY_METABOLITE: G_clean.add_node(nd)

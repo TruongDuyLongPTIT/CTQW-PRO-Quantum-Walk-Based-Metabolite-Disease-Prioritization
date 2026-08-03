@@ -10,12 +10,8 @@ import numpy as np
 from config import T_FIXED, RWR_R, RWR_TOL, RWR_MAXITER
 
 
-# ══════════════════════════════════════════════════════════════
 # TABLE 1 — RWR vs CTQW (G_cc)
-# ══════════════════════════════════════════════════════════════
-
 def run_rwr(seed_nodes, P_cc, node_idx, N, r=RWR_R):
-    """RWR on G_cc. p^(t+1) = (1-r)·P^T·p^t + r·p^0  (Köhler et al., 2008)."""
     valid = [s for s in seed_nodes if s in node_idx]
     if not valid: return np.zeros(N)
     p0 = np.zeros(N)
@@ -29,12 +25,7 @@ def run_rwr(seed_nodes, P_cc, node_idx, N, r=RWR_R):
 
 
 def make_ctqw_gcc(eigvals, eigvecs, N):
-    """
-    CTQW trên G_cc: ψ(t) = e^{-iAt}ψ₀
-    Returns run_ctqw_gcc(seed_nodes, node_idx, t=T_FIXED) → scores (N,).
-    """
     _N = N; _ev = eigvals; _vecs = eigvecs
-
     def run_ctqw_gcc(seed_nodes, node_idx, t=T_FIXED, _n=_N):
         valid_idx = [node_idx[s] for s in seed_nodes if s in node_idx]
         if not valid_idx: return np.zeros(_n)
@@ -46,16 +37,9 @@ def make_ctqw_gcc(eigvals, eigvecs, N):
     return run_ctqw_gcc
 
 
-# ══════════════════════════════════════════════════════════════
-# TABLE 2 — PROFANCY vs CTQW-PRO (G_pro)
-# ══════════════════════════════════════════════════════════════
 
+# TABLE 2 — PROFANCY vs CTQW-PRO (G_pro)
 def make_profancy(P_pro, idx_pro, node_idx, N, N_PRO, r=RWR_R):
-    """
-    PROFANCY: RWR trên G_pro.
-    p^(t+1) = (1-r)·P^T·p^t + r·p^0   (Köhler et al., 2008; Shang et al., 2014)
-    Returns run_profancy(seed_nodes) → scores (N,).
-    """
     _N = N; _N_PRO = N_PRO
     _P_pro = P_pro; _idx_pro = idx_pro; _node_idx = node_idx
     _r = r
@@ -92,10 +76,6 @@ def _ctqw_batch_raw(seed_indices, t_values, eigvals, eigvecs, N_PRO):
 
 
 def make_ctqw_pro(eigvals, eigvecs, idx_pro, N, N_PRO, _pro_src, _pro_dst):
-    """
-    CTQW-PRO: CTQW trên G_pro.
-    Returns run_ctqw_pro(seed_nodes, t_values=None) → {t: scores (N,)}.
-    """
     _N = N; _N_PRO = N_PRO
     _idx_pro = idx_pro
     _src = _pro_src; _dst = _pro_dst
@@ -121,13 +101,6 @@ def make_ctqw_pro(eigvals, eigvecs, idx_pro, N, N_PRO, _pro_src, _pro_dst):
 
 def make_nh_pro(A_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst,
                 CURRENCY_METABOLITE, pro_nodes, gamma, t=T_FIXED):
-    """
-    NH-CTQW-PRO: H_eff = A_pro - i·γ·diag(currency_metabolite_vec)
-    Imaginary decay tại các currency metabolite → suppress hub bias.
-    gamma = mean_degree ≈ 22.
-
-    Returns run_nh(seed_nodes) → scores (N,).
-    """
     cm_set = set(CURRENCY_METABOLITE)
 
     # Diagonal indexing — tránh tạo N×N matrix không cần thiết
