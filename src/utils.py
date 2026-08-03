@@ -1,8 +1,4 @@
-"""
-utils.py — Helper functions dùng chung toàn bộ pipeline.
-"""
 import re
-
 
 def standardize_hmdb_id(hid: str) -> str:
     """Chuẩn hóa HMDB ID về dạng HMDB0000001 (7 digits)."""
