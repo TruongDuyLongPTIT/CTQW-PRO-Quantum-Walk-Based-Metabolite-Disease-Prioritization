@@ -1,18 +1,3 @@
-"""
-eval_sets.py — Build 3 evaluation sets.
-Exact từ notebook Cells 3 (HMDB+CTD), 4 (MarkerDB), 5 (SMPDB).
-
-CRITICAL correctness notes:
-- eval_set1/2/3: filter `base in RECON3D_CURRENCY_METABOLITE or normalize_name(name) in CURRENCY_METABOLITE`
-  (ĐỒNG NHẤT cho cả 3 eval set — patch 2026-07: trước đây eval_set3 chỉ lọc theo
-  RECON3D_CURRENCY_METABOLITE bằng node ID, không lọc theo tên CURRENCY_METABOLITE như set1/2. Đã kiểm
-  chứng bằng thực nghiệm: áp thêm name-filter cho SMPDB không thay đổi kết quả
-  (Jaccard=1.0 trên toàn bộ 153/153 bệnh, 0 metabolite bị loại thêm) — nên patch này
-  không ảnh hưởng số liệu đã báo cáo trước đó, chỉ để đồng bộ logic cho rõ ràng.
-- hmdb_to_recon: shared mutable dict, augmented in Cell 3
-- CTD: split(',') + pts[5] for DirectEvidence = 'marker'
-- SMPDB: extract to /tmp/smpdb/ for zip files
-"""
 import gzip, pickle, re, shutil, time, zipfile
 from collections import defaultdict
 from itertools import combinations as _combinations
@@ -30,11 +15,10 @@ from config import (
 )
 from utils import standardize_hmdb_id, normalize_name, normalize_chem_aggressive
 
-
-# ── Parse HMDB + build lookups — exact từ notebook Cell 3 ────────────────────
+#  Parse HMDB + build lookups
 
 def parse_hmdb(force=False):
-    """Parse hmdb_metabolites.zip. Exact từ notebook Cell 3."""
+
     cache_path = CACHE_DIR / 'hmdb_parsed_v3.pkl'
     if cache_path.exists() and not force:
         with open(cache_path, 'rb') as f:
@@ -95,10 +79,7 @@ def parse_hmdb(force=False):
 
 
 def build_hmdb_lookups(hmdb_metabolites):
-    """
-    Build lookup dicts.
-    Exact từ notebook Cell 3 'Build lookup indices'.
-    """
+
     from utils import short_inchikey
     hmdb_name_to_id      = {}
     hmdb_name_aggr_to_id = {}
@@ -129,10 +110,7 @@ def build_hmdb_lookups(hmdb_metabolites):
 
 
 def build_CURRENCY_METABOLITE_set(hmdb_metabolites):
-    """
-    Build CURRENCY_METABOLITE name-based set.
-    Exact từ notebook Cell 3 'Cofactor set'.
-    """
+
     CURRENCY_METABOLITE = set(CURRENCY_METABOLITE_FALLBACK)
     for hid, m in hmdb_metabolites.items():
         tx = ' '.join(m['taxonomy']).lower()
@@ -146,20 +124,13 @@ def build_CURRENCY_METABOLITE_set(hmdb_metabolites):
 
 def build_eval_set1(hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
                     node_idx, CURRENCY_METABOLITE, min_mets=MIN_METS):
-    """
-    Exact từ notebook Cell 3.
-
-    CRITICAL:
-    - HMDB filter: `base in RECON3D_CURRENCY_METABOLITE or normalize_name(m['name']) in CURRENCY_METABOLITE`
-    - CTD filter:  `base in RECON3D_CURRENCY_METABOLITE` + `normalize_name(chem) in CURRENCY_METABOLITE`
-    - CTD parsing: split(',') + pts[5] DirectEvidence contains 'marker'
-    """
+    
     hmdb_name_to_id      = hmdb_lookups['name_to_id']
     hmdb_name_aggr_to_id = hmdb_lookups['name_aggr_to_id']
     hmdb_cas_to_id       = hmdb_lookups['cas_to_id']
     disease_name_canonical = {}
 
-    # ── HMDB associations ──
+    #  HMDB associations 
     gt_hmdb = defaultdict(set)
     for hid, m in hmdb_metabolites.items():
         if (m['status'] or '').strip().lower() not in ALLOWED_STATUSES: continue
@@ -174,7 +145,7 @@ def build_eval_set1(hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
                 gt_hmdb[dn].add(base)
                 disease_name_canonical[dn] = dz['name']
 
-    # ── Parse CTD — exact từ notebook Cell 3 ──
+    #  Parse CTD
     cache_ctd = CACHE_DIR / 'ctd_parsed_cas.pkl'
     if cache_ctd.exists():
         with open(cache_ctd, 'rb') as f:
@@ -363,7 +334,7 @@ def build_eval_set2(hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
     return eval_set2
 
 
-# ── SMPDB helpers — exact từ notebook Cell 5 ─────────────────────────────────
+# ── SMPDB helpers─────────
 
 TMP_SMPDB = Path('/tmp/smpdb')
 
@@ -386,7 +357,7 @@ def _get_smpdb_pw():
 
 
 def _get_smpdb_met_dir():
-    """Exact từ notebook Cell 5 _get_smpdb_met_dir()."""
+
     if SMPDB_MET_DIR.is_dir() and any(SMPDB_MET_DIR.glob('SMP*.csv')):
         return SMPDB_MET_DIR
     zip_path = PATH_SMPDB_MET
@@ -421,24 +392,11 @@ def _get_smpdb_met_dir():
     raise FileNotFoundError('smpdb_metabolites not found')
 
 
-# ── Eval set 3: SMPDB — exact từ notebook Cell 5 ─────────────────────────────
+# ── Eval set 3: SMPDB ─────────────
 
 def build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx,
                     CURRENCY_METABOLITE, min_mets=MIN_METS):
-    """
-    Exact từ notebook Cell 5.
 
-    Cofactor filter — ĐỒNG NHẤT với eval_set1/2 (patch 2026-07):
-        `base in RECON3D_CURRENCY_METABOLITE or normalize_name(name) in CURRENCY_METABOLITE`
-    Trước patch này, eval_set3 chỉ lọc theo RECON3D_CURRENCY_METABOLITE (node ID),
-    không lọc theo tên (CURRENCY_METABOLITE) như eval_set1/2. Đã kiểm chứng thực
-    nghiệm (04_check_smpdb_cofactor_filter.py): áp thêm name-filter cho
-    SMPDB cho Jaccard=1.0 trên 153/153 bệnh, 0 metabolite bị loại thêm —
-    tức patch này không thay đổi số liệu đã báo cáo, chỉ đồng bộ logic.
-
-    CURRENCY_METABOLITE là tham số BẮT BUỘC (không có default) để tránh vô tình
-    quay lại hành vi bất đối xứng cũ nếu quên truyền.
-    """
     from tqdm.auto import tqdm
 
     pw_file  = _get_smpdb_pw()
