@@ -1,37 +1,14 @@
-"""
-evaluation.py — LOO evaluation, metrics, statistical tests.
-Exact từ notebook Cells 6 (compute_metrics), 7 (LOO), 8 (stats), 10 (GPU LOO).
-"""
-import time
 import numpy as np
 import pandas as pd
 from scipy import stats as _scipy_stats
-from scipy.stats import rankdata, wilcoxon as _wilcoxon
+from scipy.stats import rankdata
 from sklearn.metrics import roc_auc_score
 from tqdm.auto import tqdm
 
 from config import METRIC_KEYS_FULL, RANDOM_SEED
 
-
-# ── compute_metrics — exact từ notebook Cell 6 ───────────────────────────────
-
 def compute_metrics(scores, test_idx, seed_idx_set,
-                    k_values=(5, 10, 20, 50), _n=None):
-    """
-    Exact từ notebook Cell 6 compute_metrics().
-
-    Protocol:
-    - mask: seeds excluded từ candidate pool
-    - test_met NOT masked (remains as candidate)
-    - rank: rank of test_met among non-seed nodes
-    - No leakage: seed_idx_set chỉ chứa seeds, không có test_met
-
-    Args:
-        scores       : (N,) float
-        test_idx     : G_cc index của test metabolite
-        seed_idx_set : set of G_cc indices của seeds
-        _n           : hardening — graph size captured at call site
-    """
+                    k_values=(5, 10, 20), _n=None):
     if _n is None: _n = len(scores)
 
     mask = np.ones(_n, dtype=bool)
@@ -44,10 +21,7 @@ def compute_metrics(scores, test_idx, seed_idx_set,
     lb = labels[mask]
 
     if sc.sum() < 1e-12 or lb.sum() < 1: return None
-    try:
-        auc = roc_auc_score(lb, sc)
-    except ValueError:
-        return None
+    auc = roc_auc_score(lb, sc)
 
     mi = np.where(mask)[0]
     tp = np.where(mi == test_idx)[0]
@@ -58,37 +32,23 @@ def compute_metrics(scores, test_idx, seed_idx_set,
     for k in k_values: out[f'r@{k}'] = 1.0 if rank <= k else 0.0
     return out
 
-
-# ── LOO evaluation (CPU) — exact từ notebook Cell 7 ──────────────────────────
-
 def run_loo_eval(disease_set, method_fn, node_idx, N, label=''):
     """
     Exact từ notebook Cell 7 run_loo_eval().
     method_fn(seed_nodes) → scores (N,)
     """
     rows = []
-    _err_printed = False   # DEBUG: in exception đầu tiên gặp phải, tránh spam log
     for disease, mets in tqdm(disease_set.items(), desc=label or 'LOO'):
         valid = [m for m in mets if m in node_idx]
         if len(valid) < 3: continue
         loo_res = []
         for i, test_met in enumerate(valid):
             seeds        = [m for j, m in enumerate(valid) if j != i]
-            # EXACT: seed_idx_set = {node_idx[s] for s in seeds}
-            # (không có test_met — no leakage)
             seed_idx_set = {node_idx[s] for s in seeds}
             test_idx     = node_idx[test_met]
-            try:
-                scores = method_fn(seeds)
-                m = compute_metrics(scores, test_idx, seed_idx_set, _n=N)
-                if m: loo_res.append(m)
-            except Exception as e:
-                if not _err_printed:
-                    import traceback
-                    print(f'\n  [DEBUG {label}] EXCEPTION on disease={disease!r}, '
-                          f'test_met={test_met!r}: {type(e).__name__}: {e}')
-                    traceback.print_exc()
-                    _err_printed = True
+            scores = method_fn(seeds)
+            m = compute_metrics(scores, test_idx, seed_idx_set, _n=N)
+            if m: loo_res.append(m)
         if loo_res:
             row = {k: float(np.mean([r[k] for r in loo_res]))
                    for k in METRIC_KEYS_FULL}
@@ -97,18 +57,9 @@ def run_loo_eval(disease_set, method_fn, node_idx, N, label=''):
             rows.append(row)
     return pd.DataFrame(rows) if rows else None
 
-
-# ── Wilcoxon — exact từ notebook Cell 8 wilcoxon_table() ────────────────────
-
 def wilcoxon_table(df_a, df_b, label,
                    metrics=None, method_a='CTQW-PRO', method_b='PROFANCY'):
-    """
-    Exact từ notebook Cell 8.
-    Bonferroni: p_bonf = min(p * len(metrics), 1.0)
-    """
     if metrics is None:
-        # Lấy từ METRIC_KEYS_FULL (config.py) thay vì hardcode riêng — tránh
-        # lệch khi METRIC_KEYS_FULL đổi (vd. bỏ r@50) mà chỗ này không cập nhật.
         metrics = [k for k in METRIC_KEYS_FULL if k != 'rank']
 
     shared = sorted(set(df_a['disease']) & set(df_b['disease']))
@@ -123,22 +74,18 @@ def wilcoxon_table(df_a, df_b, label,
     print(f"  {'Metric':<8} {method_b:>16} {method_a:>16} "
           f"{'Delta':>8} {'p_bonf':>10}  Sig")
 
+    def _sig(v):
+        if np.isnan(v): return ''
+        return ('***' if v<0.001 else '**' if v<0.01
+                else '*' if v<0.05 else '.' if v<0.1 else 'ns')
+
     for met in metrics:
         a = da.loc[shared, met].values   # method_a (CTQW-PRO)
         b = db.loc[shared, met].values   # method_b (PROFANCY)
         delta = float((a - b).mean())
-        try:
-            _, p = _scipy_stats.wilcoxon(
-                a, b, alternative='two-sided', zero_method='wilcox')
-        except Exception:
-            p = np.nan
+        _, p = _scipy_stats.wilcoxon(a, b, alternative='two-sided', zero_method='wilcox')
         p_bonf = (min(float(p) * len(metrics), 1.0)
                   if not np.isnan(p) else np.nan)
-
-        def _sig(v):
-            if np.isnan(v): return ''
-            return ('***' if v<0.001 else '**' if v<0.01
-                    else '*' if v<0.05 else '.' if v<0.1 else 'ns')
 
         print(f'  {met:<8} {b.mean():>8.4f}+/-{b.std():>6.4f} '
               f'{a.mean():>8.4f}+/-{a.std():>6.4f} '
@@ -153,10 +100,7 @@ def wilcoxon_table(df_a, df_b, label,
     return pd.DataFrame(rows)
 
 
-# ── Bootstrap CI — exact từ notebook Cell 8 ──────────────────────────────────
-
 def bootstrap_ci(df, metric='mrr', n_bootstrap=1000, ci=95.0):
-    """Exact từ notebook Cell 8."""
     rng  = np.random.default_rng(RANDOM_SEED)
     vals = df[metric].values
     mean = float(vals.mean())
@@ -169,10 +113,7 @@ def bootstrap_ci(df, metric='mrr', n_bootstrap=1000, ci=95.0):
     return mean, lo, hi
 
 
-# ── Win counts — exact từ notebook Cell 8 ────────────────────────────────────
-
 def win_counts(df_a, df_b, metric='auc', name_a='CTQW-PRO', name_b='PROFANCY'):
-    """Exact từ notebook Cell 8."""
     shared = sorted(set(df_a['disease']) & set(df_b['disease']))
     da = df_a.set_index('disease')
     db = df_b.set_index('disease')
@@ -185,17 +126,9 @@ def win_counts(df_a, df_b, metric='auc', name_a='CTQW-PRO', name_b='PROFANCY'):
     wins['n_shared'] = len(shared)
     return wins
 
-
-# ── Print results table — exact từ notebook Cell 10 print_results() ──────────
-
 def print_results_table(results_dict, label, method_order=None):
-    """
-    Fix: explicit None check (không dùng `or` trên DataFrame).
-    Format exact từ notebook Cell 10 print_results().
-    """
     order = method_order or list(results_dict.keys())
 
-    # Explicit None check
     base = None
     for nm in order:
         candidate = results_dict.get(nm)
