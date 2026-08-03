@@ -27,9 +27,9 @@ from evaluation import run_loo_eval, wilcoxon_table, compute_metrics
 
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════
 # SETUP
-# ═══════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════
 print('='*60)
 print('Setup...')
 recon_data   = parse_recon3d()
@@ -138,112 +138,3 @@ for label, eval_set in dset_by_label.items():
     print(f'\n[{label}] Spearman(degree, score):')
     print(f'  PROFANCY : rho={rho_p:.4f}, p={p_p:.4g} (n={len(degs_p)})')
     print(f'  CTQW-PRO : rho={rho_c:.4f}, p={p_c:.4g} (n={len(degs_c)})')
-
-
-# ═══════════════════════════════════════════════════════════════
-# EXP 2 — Dephasing walk (Bằng chứng thứ tư, Mục 4.3.2 paper)
-# So sánh CTQW-PRO gốc (sigma=0) với gần mất hết pha (sigma=5.0), trên
-# top-15 bệnh có delta_mrr (CTQW-PRO - PROFANCY) cao nhất mỗi bộ dữ liệu,
-# SAU KHI khử trùng seed-set (nhiều tên bệnh có thể trỏ cùng 1 seed-set,
-# đặc biệt ở SMPDB — nếu không khử trùng, "15 bệnh" có thể chỉ là vài
-# seed-set độc lập bị lặp tên).
-# ═══════════════════════════════════════════════════════════════
-print('\n' + '='*60)
-print('EXP 2: Dephasing walk (decoherence experiment)')
-
-SIGMA_GRID    = [0.0, 5.0]   # 0.0 = CTQW-PRO gốc (sanity check), 5.0 = gần mất hết pha
-N_MC_PER_FOLD = 100
-N_TOP         = 15           # số bệnh tốt nhất mỗi bộ dữ liệu, SAU khi khử trùng seed-set
-
-_rng = np.random.default_rng(RANDOM_SEED)
-
-def make_ctqw_pro_dephased(sigma, n_mc=N_MC_PER_FOLD):
-    """CTQW-PRO với nhiễu pha Gauss trên từng eigenmode. sigma=0 → CTQW-PRO gốc."""
-    def run_dephased(seed_nodes, _n=N):
-        valid = [idx_pro[s] for s in seed_nodes if s in idx_pro]
-        if not valid:
-            return np.zeros(_n)
-        psi0 = np.zeros(N_PRO, dtype=complex)
-        psi0[valid] = 1.0 / np.sqrt(len(valid))
-        c = Apro_eigvecs.conj().T @ psi0
-        if sigma == 0.0:
-            probs = np.abs(Apro_eigvecs @ (_ph0 * c))**2
-        else:
-            probs = np.zeros(N_PRO)
-            for _ in range(n_mc):
-                noise = _rng.normal(0.0, sigma, size=N_PRO)
-                probs += np.abs(Apro_eigvecs @ ((_ph0 * np.exp(1j * noise)) * c))**2
-            probs /= n_mc
-        sc = np.zeros(_n)
-        sc[_pro_dst] = probs[_pro_src]
-        return sc
-    return run_dephased
-
-def _seed_key(mets):
-    return tuple(sorted(mets))
-
-print('Tính delta_mrr (CTQW-PRO - PROFANCY), khử trùng seed-set, chọn top-15 mỗi bộ')
-top_diseases  = {}
-for label, dset in dset_by_label.items():
-    t0 = time.time()
-    df_prof = run_loo_eval(dset, run_profancy, node_idx, N, label=f'PROFANCY/{label}')
-    df_cpro = run_loo_eval(dset, ctqw_fn,      node_idx, N, label=f'CTQW-PRO/{label}')
-    merged = df_cpro.merge(df_prof, on='disease', suffixes=('_ctqwpro', '_profancy'))
-    merged['delta_mrr'] = merged['mrr_ctqwpro'] - merged['mrr_profancy']
-    merged['seed_key']  = merged['disease'].map(lambda d: _seed_key(dset[d]))
-
-    n_before = len(merged)
-    merged = merged.sort_values('delta_mrr', ascending=False)
-    merged = merged.drop_duplicates(subset='seed_key', keep='first')
-    print(f'  {label}: khử trùng seed-set — {n_before} bệnh → {len(merged)} seed-set độc lập '
-          f'({(time.time()-t0)/60:.1f} min)')
-
-    top_diseases[label] = merged.head(N_TOP)['disease'].tolist()
-    print(f'  {label} top-{N_TOP} (đã khử trùng):')
-    print(merged.head(N_TOP)[['disease', 'delta_mrr', 'mrr_ctqwpro', 'mrr_profancy']]
-          .to_string(index=False))
-
-print('\nChạy dephasing (sigma=0.0 và 5.0) trên các bệnh top đã chọn')
-results = {}
-for label, dset in dset_by_label.items():
-    subset = {d: dset[d] for d in top_diseases[label]}
-    results[label] = {}
-    for sigma in SIGMA_GRID:
-        t0 = time.time()
-        df = run_loo_eval(subset, make_ctqw_pro_dephased(sigma), node_idx, N,
-                          label=f'{label} sigma={sigma}')
-        results[label][sigma] = df
-        if df is not None and not df.empty:
-            print(f'  {label} sigma={sigma}: {(time.time()-t0)/60:.1f} min, '
-                  f"MRR={df['mrr'].mean():.4f} AUC={df['auc'].mean():.4f} "
-                  f"R@20={df['r@20'].mean():.4f}")
-
-print(f'\n{"="*72}\nBẢNG TỔNG HỢP — top {N_TOP} bệnh (đã khử trùng), sigma=0 vs sigma=5.0')
-print(f'{"="*72}')
-wx_rows_dephase = []
-for label in dset_by_label:
-    df0, df5 = results[label].get(0.0), results[label].get(5.0)
-    print(f'\n--- {label} (n={N_TOP}) ---')
-    if df0 is not None and not df0.empty:
-        print(f"  sigma=0.0: AUC={df0['auc'].mean():.4f} MRR={df0['mrr'].mean():.4f} "
-              f"R@20={df0['r@20'].mean():.4f}")
-    if df5 is not None and not df5.empty:
-        print(f"  sigma=5.0: AUC={df5['auc'].mean():.4f} MRR={df5['mrr'].mean():.4f} "
-              f"R@20={df5['r@20'].mean():.4f}")
-    if df0 is not None and df5 is not None and not df0.empty and not df5.empty:
-        df_wx = wilcoxon_table(df5, df0, f'{label} (sigma=5.0 vs 0.0)',
-                               method_a='sigma=5.0', method_b='sigma=0.0')
-        if df_wx is not None: wx_rows_dephase.append(df_wx)
-
-        merged2 = df5.merge(df0, on='disease', suffixes=('_s5', '_s0'))
-        merged2['delta_mrr_dephase'] = merged2['mrr_s5'] - merged2['mrr_s0']
-        print(f'\n  Chi tiết từng bệnh ({label}):')
-        print(merged2[['disease', 'mrr_s0', 'mrr_s5', 'delta_mrr_dephase']]
-              .sort_values('delta_mrr_dephase').to_string(index=False))
-
-if wx_rows_dephase:
-    out = RESULTS_DIR / 'dephasing_wilcoxon.csv'
-    pd.concat(wx_rows_dephase, ignore_index=True).to_csv(out, index=False)
-    print(f'\nSaved: {out}')
-
-print('\nDone.')
