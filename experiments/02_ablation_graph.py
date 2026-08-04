@@ -1,4 +1,5 @@
 import sys, time
+from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 import numpy as np
 from config import CACHE_DIR, T_FIXED, RECON3D_CURRENCY_METABOLITE
