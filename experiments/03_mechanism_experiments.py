@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import sys
+from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 from scipy.stats import spearmanr, wilcoxon, ttest_rel
 from config import CACHE_DIR, T_FIXED, RECON3D_CURRENCY_METABOLITE
