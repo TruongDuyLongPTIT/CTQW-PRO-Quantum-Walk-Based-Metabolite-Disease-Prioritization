@@ -65,10 +65,8 @@ def parse_recon3d(force=False):
         for fid, coef in mets_raw.items():
             bm = strip_comp(fid)
             base_mets[bm] = base_mets.get(bm, 0) + coef
-        genes = set(re.findall(r'\b(\d+)(?:\.\d+)?\b',
-                               rxn.get('gene_reaction_rule', '') or ''))
         sub = rxn.get('subsystem', 'Unknown')
-        rxn_info[rid] = {'mets': base_mets, 'subsystem': sub, 'genes': genes}
+        rxn_info[rid] = {'mets': base_mets, 'subsystem': sub}
         for mid in base_mets:
             if sub and sub != 'Unknown': pathway_mets[sub].add(mid)
 

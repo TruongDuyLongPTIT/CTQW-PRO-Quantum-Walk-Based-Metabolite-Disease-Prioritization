@@ -121,3 +121,51 @@ for label, eval_set in dset_by_label.items():
         degs_r, ranks_r = zip(*pairs)
         rho_r, p_r = spearmanr(degs_r, ranks_r)
         print(f'  {name:<12}: rho={rho_r:.4f}, p={p_r:.4g} (n={len(degs_r)})')
+
+# ------------EXP 2 — Local interference ratio (Bảng 10) -----------------
+print('\n' + '='*60)
+print('EXP 2: Local interference ratio r tại 3 currency metabolite bậc cao nhất: H+, H2O, ATP')
+top3_cm = ['h', 'h2o', 'atp']  # H+, H2O, ATP
+print('  Top-3 currency metabolite:')
+for nd in top3_cm:
+    print(f'    {nd:<8} ({met_info.get(nd, {}).get("name", nd)}) bậc={deg_pro[idx_pro[nd]]:.0f}')
+ 
+def psi_full(seed_nodes, t=T_FIXED):
+    valid = [idx_pro[s] for s in seed_nodes if s in idx_pro]
+    psi0 = np.zeros(N_PRO, dtype=complex)
+    psi0[valid] = 1.0 / np.sqrt(len(valid))
+    c      = Apro_eigvecs.conj().T @ psi0
+    phases = np.exp(-1j * Apro_eigvals * t)
+    return Apro_eigvecs @ (phases * c)
+ 
+def local_interference_ratio(psi_t, target_node):
+    # r_j = |sum_{k in N(j)} psi_k(t)| / sum_{k in N(j)} |psi_k(t)|
+    nb_idx = [idx_pro[nb] for nb in G_pro.neighbors(target_node) if nb in idx_pro]
+    psi_nb = psi_t[nb_idx]
+    denom  = np.sum(np.abs(psi_nb))
+    if denom < 1e-15: return None
+    return float(np.abs(np.sum(psi_nb)) / denom)
+ 
+# 6 bệnh dùng trong Bảng 5 của paper
+DISEASES_TABLE5 = ['Sepsis', 'Diabetes mellitus type 2', 'Phenylketonuria', 'Hypertension', "Crohn's disease", 'Colorectal cancer']
+ 
+rows_r = []
+for dname in DISEASES_TABLE5:
+    match = next((d for d in eval_set1 if d.strip().lower() == dname.lower()), None)
+    seed_mets = eval_set1[match]
+    psi_t = psi_full(seed_mets)
+    r_vals = [r for cm in top3_cm
+              for r in [local_interference_ratio(psi_t, cm)] if r is not None]
+    if r_vals:
+        rows_r.append({'disease': match, 'n_seed': len(seed_mets),
+                        'r_mean': float(np.mean(r_vals))})
+        for cm, r in zip(top3_cm, r_vals):
+            rows_r[-1][f'r_{cm}'] = r
+ 
+df_r5 = pd.DataFrame(rows_r).sort_values('n_seed')
+print(f'\n  Bảng 5 — {len(df_r5)} bệnh:')
+print(df_r5.to_string(index=False))
+all_r = df_r5[[f'r_{cm}' for cm in top3_cm]].values.flatten()
+print(f'\n  Trung bình {len(all_r)} cặp (bệnh, currency metabolite): '
+      f'{all_r.mean():.3f} ± {all_r.std():.3f} '
+      f'(min {all_r.min():.3f}, max {all_r.max():.3f})')
