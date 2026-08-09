@@ -94,7 +94,7 @@ def make_nh_pro(A_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst,
     # Diagonal indexing — tránh tạo N×N matrix không cần thiết
     H_eff = A_pro.astype(complex)
     for i, nd in enumerate(pro_nodes):
-        if nd in cm_set or nd.replace('_c','').replace('_m','').replace('_e','') in cm_set:
+        if nd in cm_set:
             H_eff[i, i] -= 1j * gamma
 
     eigvals_nh, V_nh = np.linalg.eig(H_eff)
