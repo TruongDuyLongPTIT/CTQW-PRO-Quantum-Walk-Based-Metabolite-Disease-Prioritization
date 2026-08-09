@@ -59,8 +59,8 @@ run_prof_c  = make_profancy(P_pro_cln, idx_pro_cln, node_idx_cln, N_cln, N_PRO_C
 run_ctqw_c  = make_ctqw_pro(eigvals_c, eigvecs_c, idx_pro_cln, N_cln, N_PRO_CLN,
                              _pro_src_cln, _pro_dst_cln)
 
-_ctqw_o_fn  = lambda seeds: run_ctqw_o(seeds, [T_FIXED])[T_FIXED]
-_ctqw_c_fn  = lambda seeds: run_ctqw_c(seeds, [T_FIXED])[T_FIXED]
+_ctqw_o_fn  = lambda seeds: run_ctqw_o(seeds, T_FIXED)
+_ctqw_c_fn  = lambda seeds: run_ctqw_c(seeds, T_FIXED)
 
 print('\nRunning ablation...')
 all_results = {}

@@ -45,7 +45,7 @@ P_pro        = A_pro / deg_pro_safe[:, None]
 run_profancy = make_profancy(P_pro, idx_pro, node_idx, N, N_PRO)
 run_ctqw     = make_ctqw_pro(Apro_eigvals, Apro_eigvecs, idx_pro, N, N_PRO,
                               _pro_src, _pro_dst)
-ctqw_fn      = lambda seeds: run_ctqw(seeds, [T_FIXED])[T_FIXED]
+ctqw_fn = lambda seeds: run_ctqw(seeds, T_FIXED)
 run_nh       = make_nh_pro(A_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst,
                             RECON3D_CURRENCY_METABOLITE, pro_nodes, NH_GAMMA, T_FIXED)
 

@@ -25,13 +25,13 @@ def run_rwr(seed_nodes, P_cc, node_idx, N, r=RWR_R):
 
 
 def make_ctqw_gcc(eigvals, eigvecs, N):
-    _N = N; _ev = eigvals; _vecs = eigvecs
+    _N = N; _ev = eigvals; _vecs = eigvecs; _vecs = eigvecs.astype(complex)
     def run_ctqw_gcc(seed_nodes, node_idx, t=T_FIXED, _n=_N):
         valid_idx = [node_idx[s] for s in seed_nodes if s in node_idx]
         if not valid_idx: return np.zeros(_n)
         psi0 = np.zeros(_n, dtype=complex)
         psi0[valid_idx] = 1.0 / np.sqrt(len(valid_idx))
-        psi_t = _vecs @ (np.exp(-1j * _ev * t) * (_vecs.conj().T @ psi0))
+        psi_t = _vecs @ (np.exp(-1j * _ev * t) * (_vecs.T @ psi0))
         return np.abs(psi_t)**2
 
     return run_ctqw_gcc
@@ -62,35 +62,23 @@ def make_profancy(P_pro, idx_pro, node_idx, N, N_PRO, r=RWR_R):
     return run_profancy
 
 
-def _ctqw_batch_raw(seed_indices, t_values, eigvals, eigvecs, N_PRO):
-    """Batch CTQW evolution helper: ψ(t) = e^{-iAt}ψ₀."""
-    if not seed_indices:
-        return {t: np.zeros(N_PRO) for t in t_values}
-    psi0 = np.zeros(N_PRO, dtype=complex)
-    psi0[seed_indices] = 1.0 / np.sqrt(len(seed_indices))
-    coef      = eigvecs.conj().T @ psi0
-    t_arr     = np.asarray(t_values, dtype=float)[:, None]
-    phases    = np.exp(-1j * eigvals[None, :] * t_arr)
-    psi_t_all = eigvecs @ (phases * coef[None, :]).T
-    return {t: np.abs(psi_t_all[:, i])**2 for i, t in enumerate(t_values)}
-
-
 def make_ctqw_pro(eigvals, eigvecs, idx_pro, N, N_PRO, _pro_src, _pro_dst):
     _N = N; _N_PRO = N_PRO
     _idx_pro = idx_pro
     _src = _pro_src; _dst = _pro_dst
-    _ev = eigvals; _vecs = eigvecs
+    _ev = eigvals
+    _vecs = eigvecs.astype(complex)   # ép kiểu sang complex
 
-    def run_ctqw_pro(seed_nodes, t_values=None, _n=_N):
-        if t_values is None: t_values = [T_FIXED]
+    def run_ctqw_pro(seed_nodes, t=T_FIXED, _n=_N):
         valid_idx = [_idx_pro[s] for s in seed_nodes if s in _idx_pro]
-        raw = _ctqw_batch_raw(valid_idx, t_values, _ev, _vecs, _N_PRO)
-        out = {}
-        for t, probs in raw.items():
-            sc = np.zeros(_n)
-            sc[_dst] = probs[_src]
-            out[t] = sc
-        return out
+        if not valid_idx: return np.zeros(_n)
+        psi0 = np.zeros(_N_PRO, dtype=complex)
+        psi0[valid_idx] = 1.0 / np.sqrt(len(valid_idx))
+        psi_t = _vecs @ (np.exp(-1j * _ev * t) * (_vecs.T @ psi0)) # bỏ cái .conj() đi vì lấy liên hợp phức của a + 0j thành a - 0j thì vẫn vậy, nên không cần thiết
+        probs = np.abs(psi_t) ** 2
+        sc = np.zeros(_n)
+        sc[_dst] = probs[_src]
+        return sc
 
     return run_ctqw_pro
 

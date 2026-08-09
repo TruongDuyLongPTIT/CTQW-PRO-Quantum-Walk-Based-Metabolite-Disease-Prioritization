@@ -107,7 +107,7 @@ run_profancy = make_profancy(P_pro, idx_pro, node_idx, N, N_PRO)
 run_ctqw_pro = make_ctqw_pro(
     Apro_eigvals, Apro_eigvecs, idx_pro, N, N_PRO, _pro_src, _pro_dst)
 
-_ctqw_pro_fn = lambda seeds: run_ctqw_pro(seeds, [T_FIXED])[T_FIXED]
+_ctqw_pro_fn = lambda seeds: run_ctqw_pro(seeds, T_FIXED)
 
 all_t2 = {}
 for label, dset in EVAL_SETS.items():

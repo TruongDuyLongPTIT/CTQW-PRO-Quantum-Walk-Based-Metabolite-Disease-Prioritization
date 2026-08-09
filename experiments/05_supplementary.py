@@ -71,7 +71,7 @@ def run_s1_experiment(ctx):
 
     # CTQW baseline
     run_ctqw = make_ctqw_pro(eigvals, eigvecs, idx_pro, N, N_PRO, _pro_src, _pro_dst)
-    ctqw_fn = lambda seeds: run_ctqw(seeds, [T_FIXED])[T_FIXED]
+    ctqw_fn = lambda seeds: run_ctqw(seeds, T_FIXED)
 
     base_rows = []
     for label, dset in [('HMDB+CTD', eval_set1), ('SMPDB', eval_set3)]:
@@ -162,7 +162,7 @@ def run_s2_experiment(ctx):
 
     all_rows = []
     for t in T_GRID_S2:
-        ctqw_fn = lambda seeds, _t=t: run_ctqw(seeds, [_t])[_t]
+        ctqw_fn = ctqw_fn = lambda seeds, _t=t: run_ctqw(seeds, _t)
         df = run_loo_eval(eval_set1, ctqw_fn, node_idx, N, label=f'CTQW-PRO(t={t})/HMDB+CTD')
         if df is not None and not df.empty:
             tmp = df.copy(); tmp['t'] = t
