@@ -153,6 +153,13 @@ def _print_full_and_dedup(all_t, method_order):
         print_results_table(_dedup_view(all_t[label], label),
                             f'{label} (dedup)', method_order=method_order)
 
+print('\n' + '='*72)
+print('TABLE 1: RWR vs CTQW (G_cc)')
+_print_full_and_dedup(all_t1, ['RWR', 'MetaboRank-lite', 'CTQW'])
+
+print('\n' + '='*72)
+print('TABLE 2: PROFANCY vs CTQW-PRO (G_pro)')
+_print_full_and_dedup(all_t2, ['PROFANCY', 'MetaboRank-lite', 't=0.1'])
 
 print('\n' + '='*72)
 print('TABLE 3: CTQW-PRO vs NH-CTQW-PRO (G_pro)')
