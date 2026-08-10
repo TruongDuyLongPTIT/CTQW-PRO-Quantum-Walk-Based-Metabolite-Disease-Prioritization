@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 from config import (RESULTS_DIR, CACHE_DIR, T_FIXED, NH_GAMMA, RECON3D_CURRENCY_METABOLITE,)
 from graph import (parse_recon3d, build_gcc, build_gpro,build_hmdb_to_recon_initial, augment_hmdb_to_recon,compute_eigendecomp,)
 from eval_sets import (parse_hmdb, build_hmdb_lookups, build_CURRENCY_METABOLITE_set,build_eval_set1, build_eval_set2, build_eval_set3,)
-from methods import (run_rwr, make_profancy, make_ctqw_pro, make_ctqw_gcc,make_nh_pro,)
+from methods import (make_rwr, make_profancy, make_metaborank_lite, make_metaborank_lite_pro, make_ctqw_pro, make_ctqw_gcc, make_nh_pro,)
 from evaluation import (run_loo_eval,wilcoxon_table, bootstrap_ci, win_counts,print_results_table,)
 
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -88,35 +88,37 @@ print('  Done.')
 print('\n' + '='*60)
 print('[Table 1] RWR vs CTQW on G_cc...')
 
-_rwr_fn   = lambda seeds: run_rwr(seeds, P_cc, node_idx, N)
-_ctqw_gcc = make_ctqw_gcc(Acc_eigvals, Acc_eigvecs, N)
-_ctqw_gcc_fn = lambda seeds: _ctqw_gcc(seeds, node_idx)
+run_rwr_gcc = make_rwr(P_cc, node_idx, N)
+run_metaborank_lite_gcc = make_metaborank_lite(P_cc, node_idx, N)
+run_ctqw_gcc = make_ctqw_gcc(Acc_eigvals, Acc_eigvecs, node_idx, N)
 
 all_t1 = {}
 for label, dset in EVAL_SETS.items():
     t0 = time.time()
-    df_rwr  = run_loo_eval(dset, _rwr_fn,   node_idx, N, label=f'RWR/{label}')
-    df_ctqw = run_loo_eval(dset, _ctqw_gcc_fn, node_idx, N, label=f'CTQW/{label}')
-    all_t1[label] = {'RWR': df_rwr, 'CTQW': df_ctqw}
+    df_rwr  = run_loo_eval(dset, run_rwr_gcc, node_idx, N, label=f'RWR/{label}')
+    df_mb   = run_loo_eval(dset, run_metaborank_lite_gcc, node_idx, N, label=f'MetaboRank-lite/{label}')
+    df_ctqw = run_loo_eval(dset, run_ctqw_gcc, node_idx, N, label=f'CTQW/{label}')
+    all_t1[label] = {'RWR': df_rwr, 'MetaboRank-lite': df_mb, 'CTQW': df_ctqw}
     print(f'  {label}: {(time.time()-t0)/60:.1f} min')
 
 # -----------TABLE 2 — PROFANCY vs CTQW-PRO on G_pro--------------
 print('\n[Table 2] PROFANCY vs CTQW-PRO on G_pro...')
 
 run_profancy = make_profancy(P_pro, idx_pro, node_idx, N, N_PRO)
+run_metaborank_lite_pro = make_metaborank_lite_pro(P_pro, idx_pro, node_idx, N, N_PRO)
 run_ctqw_pro = make_ctqw_pro(
     Apro_eigvals, Apro_eigvecs, idx_pro, N, N_PRO, _pro_src, _pro_dst)
-
-_ctqw_pro_fn = lambda seeds: run_ctqw_pro(seeds, T_FIXED)
 
 all_t2 = {}
 for label, dset in EVAL_SETS.items():
     t0 = time.time()
     df_prof = run_loo_eval(dset, run_profancy, node_idx, N,
                            label=f'PROFANCY/{label}')
-    df_ctqw = run_loo_eval(dset, _ctqw_pro_fn, node_idx, N,
+    df_mb   = run_loo_eval(dset, run_metaborank_lite_pro, node_idx, N,
+                           label=f'MetaboRank-lite/{label}')
+    df_ctqw = run_loo_eval(dset, run_ctqw_pro, node_idx, N,
                            label=f'CTQW-PRO/{label}')
-    all_t2[label] = {'PROFANCY': df_prof, 't=0.1': df_ctqw}
+    all_t2[label] = {'PROFANCY': df_prof, 'MetaboRank-lite': df_mb, 't=0.1': df_ctqw}
     print(f'  {label}: {(time.time()-t0)/60:.1f} min')
 
 # ----------TABLE 3 — NH-CTQW-PRO--------------------------------
@@ -151,13 +153,6 @@ def _print_full_and_dedup(all_t, method_order):
         print_results_table(_dedup_view(all_t[label], label),
                             f'{label} (dedup)', method_order=method_order)
 
-print('\n' + '='*72)
-print('TABLE 1: RWR vs CTQW (G_cc)')
-_print_full_and_dedup(all_t1, ['RWR', 'CTQW'])
-
-print('\n' + '='*72)
-print('TABLE 2: PROFANCY vs CTQW-PRO (G_pro)')
-_print_full_and_dedup(all_t2, ['PROFANCY', 't=0.1'])
 
 print('\n' + '='*72)
 print('TABLE 3: CTQW-PRO vs NH-CTQW-PRO (G_pro)')
@@ -178,6 +173,34 @@ for label in EVAL_SETS:
     df_c = all_t2[label].get('t=0.1')
     if df_p is not None and df_c is not None:
         wilcoxon_table(df_c, df_p, label, method_a='CTQW-PRO', method_b='PROFANCY')
+
+print('\nWILCOXON: MetaboRank-lite vs RWR (G_cc)')
+for label in EVAL_SETS:
+    df_r = all_t1[label].get('RWR')
+    df_m = all_t1[label].get('MetaboRank-lite')
+    if df_r is not None and df_m is not None:
+        wilcoxon_table(df_m, df_r, label, method_a='MetaboRank-lite', method_b='RWR')
+
+print('\nWILCOXON: CTQW vs MetaboRank-lite (G_cc)')
+for label in EVAL_SETS:
+    df_m = all_t1[label].get('MetaboRank-lite')
+    df_c = all_t1[label].get('CTQW')
+    if df_m is not None and df_c is not None:
+        wilcoxon_table(df_c, df_m, label, method_a='CTQW', method_b='MetaboRank-lite')
+
+print('\nWILCOXON: MetaboRank-lite vs PROFANCY (G_pro)')
+for label in EVAL_SETS:
+    df_p = all_t2[label].get('PROFANCY')
+    df_m = all_t2[label].get('MetaboRank-lite')
+    if df_p is not None and df_m is not None:
+        wilcoxon_table(df_m, df_p, label, method_a='MetaboRank-lite', method_b='PROFANCY')
+
+print('\nWILCOXON: CTQW-PRO vs MetaboRank-lite (G_pro)')
+for label in EVAL_SETS:
+    df_m = all_t2[label].get('MetaboRank-lite')
+    df_c = all_t2[label].get('t=0.1')
+    if df_m is not None and df_c is not None:
+        wilcoxon_table(df_c, df_m, label, method_a='CTQW-PRO', method_b='MetaboRank-lite')
 
 print('\nWILCOXON: NH vs CTQW-PRO')
 for label in EVAL_SETS:
@@ -201,6 +224,7 @@ for label in EVAL_SETS:
 print('\n--- Bootstrap 95% CI ---')
 _ci_sources = [
     ('PROFANCY',          lambda l: all_t2[l].get('PROFANCY')),
+    ('MetaboRank-lite',   lambda l: all_t2[l].get('MetaboRank-lite')),
     ('CTQW-PRO',          lambda l: all_t2[l].get('t=0.1')),
     (f'NH γ={NH_GAMMA}', lambda l: all_t3[l].get(f'NH γ={NH_GAMMA}')),
 ]
@@ -218,8 +242,12 @@ for met in ['auc','mrr','r@20']:
 _win_pairs = [
     ('CTQW',    lambda l: all_t1[l].get('CTQW'),
      'RWR',     lambda l: all_t1[l].get('RWR')),
+    ('CTQW',    lambda l: all_t1[l].get('CTQW'),
+     'MetaboRank-lite', lambda l: all_t1[l].get('MetaboRank-lite')),
     ('CTQW-PRO',lambda l: all_t2[l].get('t=0.1'),
      'PROFANCY', lambda l: all_t2[l].get('PROFANCY')),
+    ('CTQW-PRO',lambda l: all_t2[l].get('t=0.1'),
+     'MetaboRank-lite', lambda l: all_t2[l].get('MetaboRank-lite')),
     (f'NH γ={NH_GAMMA}', lambda l: all_t3[l].get(f'NH γ={NH_GAMMA}'),
      'CTQW-PRO',         lambda l: all_t2[l].get('t=0.1')),
 ]
