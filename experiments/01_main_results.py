@@ -227,6 +227,11 @@ for label in EVAL_SETS:
     wilcoxon_table(all_t2[label]['t=0.1'], all_t1[label]['CTQW'], label,
                    method_a='CTQW-PRO', method_b='CTQW')
 
+print('\nWILCOXON CHÉO ĐỒ THỊ: MetaboRank-lite-PRO (Gpro) vs MetaboRank-lite (Gcc)')
+for label in EVAL_SETS:
+    wilcoxon_table(all_t2[label]['MetaboRank-lite-PRO'], all_t1[label]['MetaboRank-lite'], label,
+                   method_a='MetaboRank-lite-PRO', method_b='MetaboRank-lite')
+
 # Bootstrap CI — tất cả methods
 print('\n--- Bootstrap 95% CI ---')
 _ci_sources = [
