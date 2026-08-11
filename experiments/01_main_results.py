@@ -202,12 +202,12 @@ for label in EVAL_SETS:
     if df_p is not None and df_m is not None:
         wilcoxon_table(df_m, df_p, label, method_a='MetaboRank-lite-PRO', method_b='PROFANCY')
 
-print('\nWILCOXON: CTQW-PRO vs MetaboRank-lite (G_pro)')
+print('\nWILCOXON: CTQW-PRO vs MetaboRank-lite-PRO (G_pro)')
 for label in EVAL_SETS:
-    df_m = all_t2[label].get('MetaboRank-lite')
+    df_m = all_t2[label].get('MetaboRank-lite-PRO')
     df_c = all_t2[label].get('t=0.1')
     if df_m is not None and df_c is not None:
-        wilcoxon_table(df_c, df_m, label, method_a='CTQW-PRO', method_b='MetaboRank-lite')
+        wilcoxon_table(df_c, df_m, label, method_a='CTQW-PRO', method_b='MetaboRank-lite-PRO')
 
 print('\nWILCOXON: NH vs CTQW-PRO')
 for label in EVAL_SETS:
@@ -236,7 +236,7 @@ for label in EVAL_SETS:
 print('\n--- Bootstrap 95% CI ---')
 _ci_sources = [
     ('PROFANCY',          lambda l: all_t2[l].get('PROFANCY')),
-    ('MetaboRank-lite',   lambda l: all_t2[l].get('MetaboRank-lite')),
+    ('MetaboRank-lite-PRO', lambda l: all_t2[l].get('MetaboRank-lite-PRO')),
     ('CTQW-PRO',          lambda l: all_t2[l].get('t=0.1')),
     (f'NH γ={NH_GAMMA}', lambda l: all_t3[l].get(f'NH γ={NH_GAMMA}')),
 ]
@@ -259,7 +259,7 @@ _win_pairs = [
     ('CTQW-PRO',lambda l: all_t2[l].get('t=0.1'),
      'PROFANCY', lambda l: all_t2[l].get('PROFANCY')),
     ('CTQW-PRO',lambda l: all_t2[l].get('t=0.1'),
-     'MetaboRank-lite', lambda l: all_t2[l].get('MetaboRank-lite')),
+     'MetaboRank-lite-PRO', lambda l: all_t2[l].get('MetaboRank-lite-PRO')),
     (f'NH γ={NH_GAMMA}', lambda l: all_t3[l].get(f'NH γ={NH_GAMMA}'),
      'CTQW-PRO',         lambda l: all_t2[l].get('t=0.1')),
 ]
