@@ -115,10 +115,10 @@ for label, dset in EVAL_SETS.items():
     df_prof = run_loo_eval(dset, run_profancy, node_idx, N,
                            label=f'PROFANCY/{label}')
     df_mb   = run_loo_eval(dset, run_metaborank_lite_pro, node_idx, N,
-                           label=f'MetaboRank-lite/{label}')
+                           label=f'MetaboRank-lite-PRO/{label}')
     df_ctqw = run_loo_eval(dset, run_ctqw_pro, node_idx, N,
                            label=f'CTQW-PRO/{label}')
-    all_t2[label] = {'PROFANCY': df_prof, 'MetaboRank-lite': df_mb, 't=0.1': df_ctqw}
+    all_t2[label] = {'PROFANCY': df_prof, 'MetaboRank-lite-PRO': df_mb, 't=0.1': df_ctqw}
     print(f'  {label}: {(time.time()-t0)/60:.1f} min')
 
 # ----------TABLE 3 — NH-CTQW-PRO--------------------------------
@@ -154,12 +154,12 @@ def _print_full_and_dedup(all_t, method_order):
                             f'{label} (dedup)', method_order=method_order)
 
 print('\n' + '='*72)
-print('TABLE 1: RWR vs CTQW (G_cc)')
+print('TABLE 1: RWR vs MetaboRank-lite vs CTQW (G_cc)')
 _print_full_and_dedup(all_t1, ['RWR', 'MetaboRank-lite', 'CTQW'])
 
 print('\n' + '='*72)
-print('TABLE 2: PROFANCY vs CTQW-PRO (G_pro)')
-_print_full_and_dedup(all_t2, ['PROFANCY', 'MetaboRank-lite', 't=0.1'])
+print('TABLE 2: PROFANCY vs MetaboRank-lite-PRO vs CTQW-PRO (G_pro)')
+_print_full_and_dedup(all_t2, ['PROFANCY', 'MetaboRank-lite-PRO', 't=0.1'])
 
 print('\n' + '='*72)
 print('TABLE 3: CTQW-PRO vs NH-CTQW-PRO (G_pro)')
@@ -195,12 +195,12 @@ for label in EVAL_SETS:
     if df_m is not None and df_c is not None:
         wilcoxon_table(df_c, df_m, label, method_a='CTQW', method_b='MetaboRank-lite')
 
-print('\nWILCOXON: MetaboRank-lite vs PROFANCY (G_pro)')
+print('\nWILCOXON: MetaboRank-lite-PRO vs PROFANCY (G_pro)')
 for label in EVAL_SETS:
     df_p = all_t2[label].get('PROFANCY')
-    df_m = all_t2[label].get('MetaboRank-lite')
+    df_m = all_t2[label].get('MetaboRank-lite-PRO')
     if df_p is not None and df_m is not None:
-        wilcoxon_table(df_m, df_p, label, method_a='MetaboRank-lite', method_b='PROFANCY')
+        wilcoxon_table(df_m, df_p, label, method_a='MetaboRank-lite-PRO', method_b='PROFANCY')
 
 print('\nWILCOXON: CTQW-PRO vs MetaboRank-lite (G_pro)')
 for label in EVAL_SETS:
