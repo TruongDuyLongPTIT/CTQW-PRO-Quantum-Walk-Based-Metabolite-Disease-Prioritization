@@ -221,3 +221,8 @@ def build_clean_gpro(G_pro, node_idx, pathway_mets, CURRENCY_METABOLITE):
             node_idx_cln, N_cln)
 
 
+def compute_coreness(G, nodelist):
+    H = G.copy()
+    H.remove_edges_from(nx.selfloop_edges(H))
+    core = nx.core_number(H)
+    return np.array([float(core.get(nd, 0)) for nd in nodelist])
