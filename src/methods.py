@@ -1,14 +1,5 @@
-"""
-methods.py — Ranking methods cho CTQW-PRO pipeline.
-
-Theo thứ tự paper:
-  Table 1:  run_rwr, make_ctqw_gcc
-  Table 2:  make_profancy, make_ctqw_pro
-  Table 3:  make_nh_pro
-"""
 import numpy as np
 from config import T_FIXED, RWR_R, RWR_TOL, RWR_MAXITER
-
 
 # TABLE 1 — RWR vs CTQW (G_cc)
 def make_rwr(P_cc, node_idx, N, r=RWR_R):
@@ -183,58 +174,6 @@ def make_netcore_pro(A_pro, deg_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst,
         return sc
 
     return run_netcore_pro
-
-
-def make_dada_ec_pro(P_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst, r=RWR_R):
-    _run_rwr = make_rwr(P_pro, idx_pro, N_PRO, r=r)
-    p_r0 = make_rwr(P_pro, idx_pro, N_PRO, r=0.0)(list(idx_pro.keys()))
-    p_r0_safe = np.where(p_r0 > 1e-15, p_r0, 1e-15)   # chan chia 0, giong
-                                                      # make_metaborank_lite_pro
-    _src, _dst, _N = _pro_src, _pro_dst, N
-
-    def run_dada_ec_pro(seed_nodes, _n=_N):
-        a = _run_rwr(seed_nodes)
-        sc = np.zeros(_n)
-        sc[_dst] = (a / p_r0_safe)[_src]
-        return sc
-
-    return run_dada_ec_pro
-
-
-
-def make_netcore_pro(A_pro, deg_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst,
-                     variant='core', core_pro=None,
-                     G_pro=None, pro_nodes=None, r=RWR_R):
-    if core_pro is None:
-        if G_pro is None or pro_nodes is None:
-            raise ValueError('Can core_pro, hoac (G_pro, pro_nodes) de tu tinh.')
-        core_pro = compute_coreness(G_pro, pro_nodes)
-
-    d = np.asarray(deg_pro, dtype=float)
-    k = np.asarray(core_pro, dtype=float)
-    d_safe = np.where(d > 0, d, 1.0)
-
-    if   variant == 'core':  w = k
-    elif variant == 'diff':  w = 1.0 / ((d - k) + 1.0)
-    elif variant == 'ratio': w = k / d_safe
-    else:
-        raise ValueError(f"variant phai la 'core'|'diff'|'ratio', nhan '{variant}'")
-
-    M = A_pro * w[None, :]                          # trong so theo node DICH
-    s = M.sum(axis=1)
-    P_nc = M / np.where(s > 0, s, 1.0)[:, None]     # moi hang tong = 1
-
-    _run = make_rwr(P_nc, idx_pro, N_PRO, r=r)      # phan con lai y het PROFANCY
-    _src, _dst, _N = _pro_src, _pro_dst, N
-
-    def run_netcore_pro(seed_nodes, _n=_N):
-        p = _run(seed_nodes)
-        sc = np.zeros(_n)
-        sc[_dst] = p[_src]                          # G_pro (2894) -> node_idx (2788)
-        return sc
-
-    return run_netcore_pro
-
 
 
 def make_dada_ec_pro(P_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst, r=RWR_R):
