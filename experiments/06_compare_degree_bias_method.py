@@ -331,3 +331,55 @@ if RUN_SENSITIVITY:
                   f'chenh {da["mrr"].mean()-db["mrr"].mean():+.4f}')
 
 print('\n' + '=' * 78); print('XONG'); print('=' * 78)
+
+
+# --------DONG GOP MRR THEO NHOM BAC CUA TP (thap = phan vi 1-4, cao = phan vi 5-6)
+print('\n' + '=' * 78); print('PHAN G: dong gop MRR theo nhom bac cua TP'); print('=' * 78)
+
+from evaluation import compute_metrics
+
+N_DEG_BIN = 6
+deg_met = deg_arr[met_mask]
+edges = np.unique(np.quantile(deg_met, np.linspace(0, 1, N_DEG_BIN + 1)))
+def deg_bin(d): return int(np.clip(np.digitize(d, edges[1:-1], right=True), 0, len(edges) - 2))
+LOW_BINS, HIGH_BINS = {0, 1, 2, 3}, {4, 5}
+def group_of(b): return 'low' if b in LOW_BINS else 'high'
+
+TABLE_METHODS = [m for m in ORDER if m != 'PROFANCY']   # gom ca NetCore-core
+
+def collect_folds(dset):
+    rows = []
+    for disease, mets in dset.items():
+        valid = [m for m in mets if m in idx_pro]
+        if len(valid) < 3: continue
+        for i, test_met in enumerate(valid):
+            seeds = [m for j, m in enumerate(valid) if j != i]
+            seed_idx_set = {node_idx[s] for s in seeds}
+            test_idx = node_idx[test_met]
+            rp = compute_metrics(METHODS['PROFANCY'](seeds), test_idx, seed_idx_set, _n=N)
+            if rp is None: continue
+            grp = group_of(deg_bin(deg_arr[idx_pro[test_met]]))
+            for m in TABLE_METHODS:
+                rm = compute_metrics(METHODS[m](seeds), test_idx, seed_idx_set, _n=N)
+                if rm is None: continue
+                rows.append({'disease': disease, 'method': m, 'group': grp,
+                            'delta': 1.0 / rm['rank'] - 1.0 / rp['rank']})
+    return pd.DataFrame(rows)
+
+def decompose(df_fold):
+    n_benh = df_fold['disease'].nunique()
+    t = df_fold.groupby(['disease', 'group'])['delta'].agg(['mean', 'count']).reset_index()
+    t = t.merge(df_fold.groupby('disease')['delta'].count().rename('n_tong'), on='disease')
+    t['dong_gop'] = (t['count'] / t['n_tong']) * t['mean']
+    low  = t.loc[t['group'] == 'low',  'dong_gop'].sum() / n_benh
+    high = t.loc[t['group'] == 'high', 'dong_gop'].sum() / n_benh
+    return low, high, low + high
+
+for label in RUN_DATASETS:
+    df_fold = collect_folds(dset_by_label[label])
+    print(f'\n=== {label} ===')
+    print(f'{"Method":<22}{"contrib_low":>13}{"contrib_high":>14}{"MRR_delta":>12}{"pct_high%":>11}')
+    for m in TABLE_METHODS:
+        low, high, delta = decompose(df_fold[df_fold['method'] == m])
+        pct = 100 * high / delta if abs(delta) > 1e-6 else float('nan')
+        print(f'{m:<22}{low:>13.5f}{high:>14.5f}{delta:>12.5f}{pct:>11.1f}')
