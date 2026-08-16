@@ -15,7 +15,10 @@ SMPDB_MET_DIR = BASE_DIR / 'smpdb_metabolites.csv'
 SMPDB_PW_DIR  = BASE_DIR / 'smpdb_pathways.csv'
 
 T_FIXED     = 0.1
-NH_GAMMA    = 22.0   # mean_degree G_pro — từ grid search
+
+NH_GAMMA    = 22.0   # mean_degree RECOND G_pro 
+NH_GAMMA_KEGG = 16.0 # mean_degree KEGG G_pro 
+
 RWR_R = 0.7   # restart probability r, theo đúng công thức Köhler (2008) / PROFANCY (2014):
               # p^(t+1) = (1-r)·P^T·p^t + r·p^0
 RWR_TOL     = 1e-8
