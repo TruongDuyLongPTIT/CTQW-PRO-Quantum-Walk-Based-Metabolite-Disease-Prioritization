@@ -1,23 +1,3 @@
-"""
-kegg_graph.py — đối trọng của graph.py cho nguồn dữ liệu KEGG.
-
-Gộp (deduplicate) các hàm trước đây bị lặp y hệt nhau ở 3 nơi:
-  - 03_kegg_network_robustness.py  (bản đầy đủ, có fetch từ KEGG REST API)
-  - 07_kegg_compare_baselines.py   (bản rút gọn, chỉ rebuild từ cache)
-  - 08_kegg_ablation.py            (bản rút gọn, chỉ rebuild từ cache)
-
-Thay đổi so với 3 bản gốc:
-  1. Gộp build_kegg_metabolism_data() (có fetch) và rebuild_kegg_from_cache()
-     (chỉ đọc cache) thành MỘT hàm build_kegg_metabolism_data(force=False) —
-     bản gốc đã tự kiểm tra cache trước khi fetch, nên rebuild_kegg_from_cache()
-     ở 07/08 là code trùng lặp không cần thiết.
-  2. build_hmdb_to_kegg() trước lặp lại 3 lần — giờ chỉ 1 bản.
-  3. parse_hmdb_with_kegg() giữ riêng ở đây (không gộp vào eval_sets.parse_hmdb() —
-     xem ghi chú cuối file, chưa được duyệt để gộp).
-  4. KEGG_CURRENCY_METABOLITE chuyển sang config.py, nằm cùng chỗ với
-     RECON3D_CURRENCY_METABOLITE. Dùng qua tham số currency_metabolite_ids= của
-     build_eval_set1/2/3 (eval_sets.py) — không còn cần monkeypatch.
-"""
 import json, pickle, re, time, urllib.request, zipfile
 
 import networkx as nx
@@ -29,9 +9,6 @@ KEGG_BASE       = 'https://rest.kegg.jp'
 MIN_INTERVAL_S  = 0.34   # ~3 req/s — KEGG không công bố rate limit cứng, đây là
                          # mức phổ biến cộng đồng dùng để tôn trọng server công cộng.
 EXCLUDE_SUBCATS = {'Global and overview maps', 'Chemical structure transformation maps'}
-
-
-# ── KEGG REST fetch helper (stdlib only, có rate-limit + retry) ─────────────
 
 _last_call = [0.0]
 
@@ -120,13 +97,6 @@ def fetch_reaction_equations(rxn_ids, batch_size=10):
 
 
 def build_kegg_metabolism_data(force=False):
-    """
-    Trả về (G_cc_kegg, kegg_node_idx, N_kegg, pathway_mets_kegg).
-
-    Tự fetch từ KEGG REST API nếu cache chưa có (kegg_metabolism_raw_v1.pkl),
-    ngược lại đọc cache trực tiếp — GỘP hai việc "fetch" và "rebuild from
-    cache" mà 03/07/08 trước đây tách thành 2 hàm riêng.
-    """
     cache_path = CACHE_DIR / 'kegg_metabolism_raw_v1.pkl'
     if cache_path.exists() and not force:
         with open(cache_path, 'rb') as f:
@@ -161,8 +131,6 @@ def build_kegg_metabolism_data(force=False):
     pathway_rxns = raw_data['pathway_rxns']
     rxn_to_cpds  = raw_data['rxn_to_cpds']
 
-    # G_cc_kegg: cạnh giữa 2 compound cùng xuất hiện trong 1 reaction — đúng
-    # logic parse_recon3d (không phân biệt substrate/product).
     edges = set(); all_cpds = set()
     for cpds in rxn_to_cpds.values():
         all_cpds.update(cpds)
@@ -179,12 +147,11 @@ def build_kegg_metabolism_data(force=False):
     kegg_nodes    = sorted(G_cc_kegg.nodes())
     N_kegg        = len(kegg_nodes)
     kegg_node_idx = {nd: i for i, nd in enumerate(kegg_nodes)}
+    A_cc_kegg     = nx.to_numpy_array(G_cc_kegg, nodelist=kegg_nodes)
 
     print(f'  G_cc_kegg: {N_kegg} compound (largest CC / {len(all_cpds)} tổng), '
           f'{G_cc_kegg.number_of_edges()} cạnh')
 
-    # pathway_mets_kegg: label → set(compound) — graph.build_gpro() dùng trực
-    # tiếp (hàm đó đã generic, không phụ thuộc Recon3D).
     pathway_mets_kegg = {}
     for num, name in pathways:
         mets = set()
@@ -193,14 +160,8 @@ def build_kegg_metabolism_data(force=False):
         if mets:
             pathway_mets_kegg[f'{num} {name}'] = mets
 
-    return G_cc_kegg, kegg_node_idx, N_kegg, pathway_mets_kegg
+    return G_cc_kegg, kegg_node_idx, N_kegg, A_cc_kegg, pathway_mets_kegg
 
-
-# ── HMDB parse có kegg_id ────────────────────────────────────────────────
-# Giữ riêng khỏi eval_sets.parse_hmdb() — xem ghi chú cuối file, chưa được
-# duyệt để gộp (sẽ khiến 1 lần parse HMDB phục vụ cả 2 pipeline thay vì 2 lần
-# parse riêng, nhưng phải đổi tên cache của parse_hmdb() để tránh đọc nhầm
-# cache cũ thiếu field kegg_id).
 
 def parse_hmdb_with_kegg(force=False):
     cache_path = CACHE_DIR / 'hmdb_parsed_with_kegg_v1.pkl'
@@ -267,12 +228,6 @@ def parse_hmdb_with_kegg(force=False):
 
 
 def build_hmdb_to_kegg(hmdb_metabolites, kegg_node_idx):
-    """
-    hmdb accession → KEGG compound id, dùng trực tiếp field <kegg_id> (HMDB đã
-    curate cross-ref này) — KHÔNG augment theo tên/InChIKey như
-    build_hmdb_to_recon_initial+augment_hmdb_to_recon (Recon3D thiếu cross-ref
-    nên phải suy luận thêm); kegg_id là cross-ref trực tiếp, đáng tin hơn.
-    """
     hmdb_to_kegg = {}
     for hid, m in hmdb_metabolites.items():
         kid = m.get('kegg_id', '')
@@ -284,12 +239,3 @@ def build_hmdb_to_kegg(hmdb_metabolites, kegg_node_idx):
             hmdb_to_kegg.setdefault('HMDB' + digits, kid)
             hmdb_to_kegg.setdefault('HMDB' + digits.zfill(5), kid)
     return hmdb_to_kegg
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# GHI CHÚ — phương án gộp parse_hmdb_with_kegg() vào eval_sets.parse_hmdb()
-# ══════════════════════════════════════════════════════════════════════════
-# Chưa áp dụng, để bạn quyết định (đụng vào eval_sets.py dùng chung Recon3D):
-# thêm 1 dòng kegg = gtext(elem,'kegg_id') + field 'kegg_id' trong
-# eval_sets.parse_hmdb(), đổi tên cache 'hmdb_parsed_v3.pkl' → '...v4.pkl' để
-# ép parse lại 1 lần, rồi xoá hẳn parse_hmdb_with_kegg() ở đây.
