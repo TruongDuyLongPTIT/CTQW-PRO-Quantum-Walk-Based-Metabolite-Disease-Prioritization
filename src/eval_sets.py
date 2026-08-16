@@ -123,21 +123,24 @@ def build_CURRENCY_METABOLITE_set(hmdb_metabolites):
 # ── Eval set 1: HMDB + CTD — exact từ notebook Cell 3 ────────────────────────
 
 def build_eval_set1(hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
-                    node_idx, CURRENCY_METABOLITE, min_mets=MIN_METS):
-    
+                    node_idx, CURRENCY_METABOLITE, min_mets=MIN_METS,
+                    currency_metabolite_ids=None):
+    if currency_metabolite_ids is None:
+        currency_metabolite_ids = RECON3D_CURRENCY_METABOLITE
+
     hmdb_name_to_id      = hmdb_lookups['name_to_id']
     hmdb_name_aggr_to_id = hmdb_lookups['name_aggr_to_id']
     hmdb_cas_to_id       = hmdb_lookups['cas_to_id']
     disease_name_canonical = {}
 
-    #  HMDB associations 
+    #  HMDB associations
     gt_hmdb = defaultdict(set)
     for hid, m in hmdb_metabolites.items():
         if (m['status'] or '').strip().lower() not in ALLOWED_STATUSES: continue
         base = hmdb_to_recon.get(hid)
         if not base or base not in node_idx: continue
         # Exact cofactor check from notebook
-        if base in RECON3D_CURRENCY_METABOLITE or normalize_name(m['name']) in CURRENCY_METABOLITE:
+        if base in currency_metabolite_ids or normalize_name(m['name']) in CURRENCY_METABOLITE:
             continue
         for dz in m['diseases_assoc'] + m['diseases_biomarker']:
             dn = normalize_name(dz['name'])
@@ -194,7 +197,7 @@ def build_eval_set1(hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
     gt_ctd = defaultdict(set)
     for _, row in df_ctd.iterrows():
         base = ctd_map(row['ChemicalName'], row.get('CAS', ''))
-        if not base or base in RECON3D_CURRENCY_METABOLITE: continue
+        if not base or base in currency_metabolite_ids: continue
         # Exact from notebook
         if normalize_name(row['ChemicalName']) in CURRENCY_METABOLITE: continue
         dn = normalize_name(row['DiseaseName'])
@@ -220,8 +223,10 @@ def build_eval_set1(hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
 
 def build_eval_set2(hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
                     node_idx, CURRENCY_METABOLITE, disease_name_canonical,
-                    min_mets=MIN_METS):
-    """Exact từ notebook Cell 4."""
+                    min_mets=MIN_METS, currency_metabolite_ids=None):
+    if currency_metabolite_ids is None:
+        currency_metabolite_ids = RECON3D_CURRENCY_METABOLITE
+
     from utils import short_inchikey
     hmdb_name_to_id      = hmdb_lookups['name_to_id']
     hmdb_name_aggr_to_id = hmdb_lookups['name_aggr_to_id']
@@ -317,7 +322,7 @@ def build_eval_set2(hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
                  normalize_chem_aggressive(m['name']))
             if hm: base = hmdb_to_recon.get(hm)
         if not base or base not in node_idx: continue
-        if base in RECON3D_CURRENCY_METABOLITE or normalize_name(m['name']) in CURRENCY_METABOLITE:
+        if base in currency_metabolite_ids or normalize_name(m['name']) in CURRENCY_METABOLITE:
             continue
         for cond in m['conditions']:
             cn = normalize_name(cond)
@@ -339,7 +344,6 @@ def build_eval_set2(hmdb_metabolites, hmdb_lookups, hmdb_to_recon,
 TMP_SMPDB = Path('/tmp/smpdb')
 
 def _get_smpdb_pw():
-    """Exact từ notebook Cell 5 _get_smpdb_pw()."""
     for cand in [BASE_DIR/'smpdb_pathways.csv', SMPDB_PW_DIR]:
         if cand.is_file(): return cand
     zip_path = PATH_SMPDB_PW
@@ -395,7 +399,10 @@ def _get_smpdb_met_dir():
 # ── Eval set 3: SMPDB ─────────────
 
 def build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx,
-                    CURRENCY_METABOLITE, min_mets=MIN_METS):
+                    CURRENCY_METABOLITE, min_mets=MIN_METS,
+                    currency_metabolite_ids=None):
+    if currency_metabolite_ids is None:
+        currency_metabolite_ids = RECON3D_CURRENCY_METABOLITE
 
     from tqdm.auto import tqdm
 
@@ -458,7 +465,7 @@ def build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx,
                 if hmdb_status_cache.get(hid,'').strip().lower() in ALLOWED_STATUSES}
         if kept: smpdb_filt[pw_name] = kept
 
-    # Map HMDB → Recon3D — lọc cả RECON3D_CURRENCY_METABOLITE (ID) và CURRENCY_METABOLITE (tên),
+    # Map HMDB → node — lọc cả currency_metabolite_ids (ID) và CURRENCY_METABOLITE (tên),
     # đồng nhất với build_eval_set1/2 (patch 2026-07).
     smpdb_nodes = {}
     for pw_name, hmdb_ids in smpdb_filt.items():
@@ -467,7 +474,7 @@ def build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx,
             base = hmdb_to_recon.get(hid)
             if not base or base not in node_idx: continue
             # Exact cofactor check, đồng nhất với build_eval_set1/2
-            if base in RECON3D_CURRENCY_METABOLITE or normalize_name(
+            if base in currency_metabolite_ids or normalize_name(
                     hmdb_metabolites.get(hid, {}).get('name', '')) in CURRENCY_METABOLITE:
                 continue
             mnodes.add(base)
@@ -549,5 +556,3 @@ def build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx,
         if len(mnodes) >= min_mets
     }
     return eval_set3
-
-

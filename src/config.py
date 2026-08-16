@@ -32,6 +32,41 @@ RECON3D_CURRENCY_METABOLITE = {
     'utp', 'udp', 'ump', 'h', 'h2o', 'co2', 'o2', 'pi', 'ppi',
     'hco3', 'nh4', 'so4',
 }
+
+# KEGG compound ID tương đương RECON3D_CURRENCY_METABOLITE (cùng 29 chất,
+# theo đúng thứ tự ở trên) — mỗi ID đã verify qua KEGG REST API (get/find),
+KEGG_CURRENCY_METABOLITE = {
+    'C00003',  # nad   (NAD+)
+    'C00004',  # nadh
+    'C00006',  # nadp  (NADP+)
+    'C00005',  # nadph
+    'C00016',  # fad
+    'C01352',  # fadh2
+    'C00010',  # coa
+    'C00024',  # accoa (acetyl-CoA)
+    'C00002',  # atp
+    'C00008',  # adp
+    'C00020',  # amp
+    'C00044',  # gtp
+    'C00035',  # gdp
+    'C00144',  # gmp
+    'C00063',  # ctp
+    'C00112',  # cdp
+    'C00055',  # cmp
+    'C00075',  # utp
+    'C00015',  # udp
+    'C00105',  # ump
+    'C00080',  # h    (H+)
+    'C00001',  # h2o
+    'C00011',  # co2
+    'C00007',  # o2
+    'C00009',  # pi   (phosphate)
+    'C00013',  # ppi  (pyrophosphate)
+    'C00288',  # hco3 (HCO3-)
+    'C01342',  # nh4  (NH4+)
+    'C00059',  # so4  (sulfate)
+}
+
 CURRENCY_METABOLITE_FALLBACK = {
     'h2o','h','h+','oh-','na+','k+','cl-','ca2+','mg2+','fe2+','fe3+',
     'atp','adp','amp','gtp','gdp','gmp','ctp','cdp','cmp',
@@ -51,5 +86,3 @@ ALLOWED_STATUSES = {'detected', 'quantified', 'detected and quantified'}
 N_JOBS = os.cpu_count()
 for _env in ['OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS']:
     os.environ.setdefault(_env, str(N_JOBS))
-
-
