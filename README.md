@@ -1,6 +1,6 @@
 # CTQW-PRO: Quantum Walk-Based Metabolite–Disease Prioritization
 
-[![Open In Colab Recon3D](https://colab.research.google.com/assets/colab-badge.svg)](https://github.com/TruongDuyLongPTIT/CTQW-PRO-Quantum-Walk-Based-Metabolite-Disease-Prioritization/blob/main/main_notebook_recon3d.ipynb)
+[![Open In Colab Recon3D](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TruongDuyLongPTIT/CTQW_PRO_METABOLITES_PRIORITIZING/blob/main/main_notebook_recon3d.ipynb)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://github.com/TruongDuyLongPTIT/CTQW-PRO-Quantum-Walk-Based-Metabolite-Disease-Prioritization/blob/main/main_notebook_kegg.ipynb)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
