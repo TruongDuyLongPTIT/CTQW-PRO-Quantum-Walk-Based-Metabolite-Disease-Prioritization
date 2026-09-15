@@ -190,3 +190,56 @@ def make_dada_ec_pro(P_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst, r=RWR_R):
         return sc
 
     return run_dada_ec_pro
+
+
+#-----Amend IN
+# AMEND-IN-LITE — Inflation-Normalization (Boyd et al. 2025, AMEND 2.0)
+# Port tu inflate_normalize(), github.com/samboyd0/AMEND, R/RandomWalk.R
+# Doi chieu voi R: max|diff| ~ 6e-16
+
+_IN_KF = np.array([1., 10.] + list(np.arange(50., 2001., 50.)))
+
+
+def _col_norm(X):
+    cs = X.sum(0); inv = np.zeros_like(cs); nz = cs != 0; inv[nz] = 1 / cs[nz]
+    return X * inv
+
+
+def _stationary(M):
+    n = M.shape[0]; p = np.full(n, 1 / n); delta, step = 1., 0
+    while delta > 1e-6 and step <= 100:
+        q = M @ p; delta = np.abs(q - p).sum(); p = q; step += 1
+    p = np.where(p < 1e-10, 0, p); s = p.sum()
+    return np.where(p / s < 1e-10, 0, p / s) if s else p
+
+
+def _entropy(p):
+    return float(np.where(np.round(p, 10) == 0, 0., -p * np.log(np.where(p > 0, p, 1))).sum())
+
+
+def inflate_normalize(M, verbose=True):
+    s0 = _stationary(M); e0 = _entropy(s0); res = np.zeros(len(_IN_KF)); j = -1
+    if verbose and np.abs(M @ s0 - s0).sum() > 1e-6:
+        print('  [IN] canh bao: phan phoi dung chua hoi tu (do thi gan bipartite?)')
+    for i, kf in enumerate(_IN_KF):
+        e = _entropy(_stationary(_col_norm(M ** (1 + kf * s0)[:, None])))
+        if (e < e0) if i == 0 else (e <= res[i - 1]):
+            break
+        res[i] = e; j = i
+    if j < 0:
+        if verbose: print('  [IN] entropy khong tang -> giu nguyen M')
+        return M.copy()
+    jb = int(np.argmax(res[:j + 1]))
+    if verbose: print(f'  [IN] kf* = {_IN_KF[jb]:.0f} | entropy {e0:.4f} -> {res[jb]:.4f}')
+    return _col_norm(M ** (1 + _IN_KF[jb] * s0)[:, None])
+
+
+def make_amend_in_lite(A_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst, r=RWR_R, verbose=True):
+    P_in = inflate_normalize(_col_norm(np.asarray(A_pro, float)), verbose).T.copy()
+    _run = make_rwr(P_in, idx_pro, N_PRO, r=r)
+    _src, _dst, _N = _pro_src, _pro_dst, N
+
+    def run_amend_in_lite(seed_nodes, _n=_N):
+        sc = np.zeros(_n); sc[_dst] = _run(seed_nodes)[_src]; return sc
+
+    return run_amend_in_lite

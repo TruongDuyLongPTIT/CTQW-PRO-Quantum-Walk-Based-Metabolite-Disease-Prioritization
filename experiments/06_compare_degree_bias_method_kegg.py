@@ -11,7 +11,8 @@ from kegg_graph import build_kegg_metabolism_data, parse_hmdb_with_kegg, build_h
 from graph import build_gpro, compute_eigendecomp, compute_coreness
 from eval_sets import build_hmdb_lookups, build_CURRENCY_METABOLITE_set, build_eval_set1, build_eval_set3
 from methods import (make_profancy, make_metaborank_lite_pro, make_ctqw_pro,
-                     make_nh_pro, make_netcore_pro, make_dada_ec_pro)
+                     make_nh_pro, make_netcore_pro, make_dada_ec_pro,
+                     make_amend_in_lite)
 from evaluation import run_loo_eval, wilcoxon_table, print_results_table
 
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -101,6 +102,8 @@ for v in ['core', 'diff', 'ratio']:
                                                   variant=v, core_pro=core_pro)
 METHODS['MetaboRank-lite-PRO'] = make_metaborank_lite_pro(P_pro, idx_pro, node_idx,
                                                           N, N_PRO)
+METHODS['AMEND-IN-LITE']       = make_amend_in_lite(A_pro, idx_pro, N, N_PRO,
+                                                    _pro_src, _pro_dst)
 METHODS['CTQW-PRO']            = make_ctqw_pro(Apro_eigvals, Apro_eigvecs, idx_pro,
                                                N, N_PRO, _pro_src, _pro_dst)
 print(f'  Dung NH-CTQW-PRO (gamma={NH_GAMMA_KEGG})...', end=' ', flush=True)
