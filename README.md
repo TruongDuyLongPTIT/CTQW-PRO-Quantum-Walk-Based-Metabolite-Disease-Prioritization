@@ -1,153 +1,151 @@
 # CTQW-PRO: Quantum Walk-Based Metabolite–Disease Prioritization
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TruongDuyLongPTIT/CTQW_PRO_METABOLITES_PRIORITIZING/blob/main/main_notebook_recon3d.ipynb)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TruongDuyLongPTIT/CTQW_PRO_METABOLITES_PRIORITIZING/blob/main/main_notebook_kegg.ipynb)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TruongDuyLongPTIT/CTQW-PRO-Quantum-Walk-Based-Metabolite-Disease-Prioritization/blob/main/main_notebook_recon3d.ipynb) Recon3D
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TruongDuyLongPTIT/CTQW-PRO-Quantum-Walk-Based-Metabolite-Disease-Prioritization/blob/main/main_notebook_kegg.ipynb) KEGG
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Continuous-Time Quantum Walk on metabolic networks for disease-metabolite prioritization — no training required.**
+Code accompanying our manuscript on CTQW-PRO (under review). It reproduces all experiments reported in the manuscript.
 
 ## Overview
 
-We compare three graph-based ranking methods on the **Recon3D** human metabolic network (2,788 nodes, 22,439 edges):
+Given a set of metabolites known to be associated with a disease (seeds), each method scores all other metabolites in a metabolic network; candidates are ranked by score. No training is required.
 
-| Method | Description |
-|--------|-------------|
-| **PROFANCY** | Random Walk with Restart on bipartite graph G_pro |
-| **CTQW-PRO** | Continuous-Time Quantum Walk on bipartite metabolite–pathway graph G_pro |
-| **Driven CTQW-PRO** | CTQW-PRO with iterative seed reinforcement (α=0.5, 2 steps) |
+**Methods proposed in this work**
 
-Evaluation uses **leave-one-out cross-validation** across three independent disease-metabolite sets, all results reported as Wilcoxon paired test (Bonferroni-corrected).
+| Method | Graph | Description |
+|---|---|---|
+| CTQW | $G_{cc}$ | Continuous-time quantum walk with Hamiltonian $H = A$ |
+| CTQW-PRO | $G_{pro}$ | CTQW on the pathway-augmented graph |
+| NH-CTQW-PRO | $G_{pro}$ | CTQW-PRO with a non-Hermitian term that attenuates amplitude at currency metabolites |
 
-## Key Results
+**Baselines**
 
-### Table 1 — CTQW vs RWR on G_cc (graph without pathway nodes)
+| Method | Reference |
+|---|---|
+| RWR | Köhler et al., 2008 |
+| PROFANCY (RWR on $G_{pro}$) | Shang et al., 2014 |
+| DADA-EC | Erten et al., 2011 |
+| NetCore (core, diff, ratio variants) | Barel & Herwig, 2020 |
+| MetaboRank-LITE | reduced version of MetaboRank (Frainay et al., 2019) |
+| AMEND-IN-LITE | Inflation-Normalization subroutine of AMEND 2.0 (Boyd et al., 2025) |
 
-| Set | n | Method | AUC | MRR | R@5 | R@10 | R@20 |
-|-----|---|--------|-----|-----|-----|------|------|
-| HMDB+CTD | 158 | RWR | 0.769 | 0.011 | 0.000 | 0.001 | 0.045 |
-| | | **CTQW** | 0.762 | **0.051** | **0.077** | **0.118** | **0.177** |
-| MarkerDB | 21 | RWR | 0.835 | 0.018 | 0.009 | 0.009 | 0.094 |
-| | | **CTQW** | **0.841** | **0.076** | **0.106** | **0.170** | **0.245** |
-| SMPDB | 153 | RWR | **0.934** | 0.027 | 0.000 | 0.016 | 0.171 |
-| | | **CTQW** | 0.931 | **0.193** | **0.274** | **0.351** | **0.479** |
+## Method summary
 
-### Table 2 — CTQW-PRO vs PROFANCY on G_pro (with pathway nodes)
+**Graphs.** $G_{cc}$ is the largest connected component of the metabolite graph, in which two metabolites are linked if they occur in the same reaction. $G_{pro}$ extends $G_{cc}$ with one node per pathway, linked to all metabolites of that pathway.
 
-| Set | n | Method | AUC | MRR | R@5 | R@10 | R@20 |
-|-----|---|--------|-----|-----|-----|------|------|
-| HMDB+CTD | 158 | PROFANCY | 0.810 | 0.011 | 0.000 | 0.001 | 0.045 |
-| | | **CTQW-PRO** | **0.820**\*\* | **0.060**\*\*\* | **0.085**\*\*\* | **0.134**\*\*\* | **0.192**\*\*\* |
-| MarkerDB | 21 | PROFANCY | 0.864 | 0.018 | 0.005 | 0.009 | 0.090 |
-| | | **CTQW-PRO** | **0.884** | **0.085**\*\*\* | **0.130**\*\* | **0.186**\*\* | **0.265**\* |
-| SMPDB | 153 | PROFANCY | 0.945 | 0.027 | 0.000 | 0.014 | 0.179 |
-| | | **CTQW-PRO** | **0.957**\*\*\* | **0.217**\*\*\* | **0.308**\*\*\* | **0.418**\*\*\* | **0.543**\*\*\* |
+**CTQW / CTQW-PRO.** The initial state is a uniform superposition over the seed metabolites, $|\psi_0\rangle$. The state evolves as
 
-> \*p<0.05 · \*\*p<0.01 · \*\*\*p<0.001 (Wilcoxon paired, Bonferroni-corrected)
+$$|\psi(t)\rangle = e^{-iAt}\,|\psi_0\rangle, \qquad t = 0.1,$$
 
-**Win rate (AUC, CTQW-PRO vs PROFANCY):** 63% on HMDB+CTD · 62% on MarkerDB · **80% on SMPDB**
+and the score of metabolite $v$ is $|\langle v|\psi(t)\rangle|^2$.
 
-### Table 3 — Driven CTQW-PRO vs CTQW-PRO on G_pro
+**NH-CTQW-PRO.** The Hamiltonian on $G_{pro}$ is replaced by
 
-Driven variant tested on SMPDB only (largest set):
+$$H_{\mathrm{eff}} = A_{pro} - i\gamma\,\mathrm{diag}(c),$$
 
-| Method | AUC | MRR | R@5 | R@10 | R@20 | R@50 |
-|--------|-----|-----|-----|------|------|------|
-| CTQW-PRO | **0.957** | 0.217 | 0.308 | 0.418 | 0.543 | 0.674 |
-| **Driven CTQW-PRO** | 0.955 | **0.266**\*\*\* | **0.391**\*\*\* | **0.489**\*\*\* | **0.593**\*\*\* | **0.735**\*\*\* |
+where $c_v = 1$ if $v$ is one of the 29 currency metabolites listed in `src/config.py` and $c_v = 0$ otherwise. $\gamma$ is set to the mean degree of $G_{pro}$ (22 for Recon3D, 16 for KEGG). Scores are computed as for CTQW-PRO.
 
-> Driven CTQW-PRO improves MRR by **+22.5%**, R@5 by **+26.9%**, R@20 by **+9.2%** over CTQW-PRO (all p<0.001).
+**Hyperparameters.** $t = 0.1$ was selected by a grid search for CTQW-PRO on Recon3D / HMDB+CTD (`05_supplementary.py`, S2) and used unchanged for all networks and disease sets. RWR-based methods use restart probability $r = 0.7$ with $p^{(k+1)} = (1-r)\,P^\top p^{(k)} + r\,p^{(0)}$. Sensitivity to the restart values of the original NetCore ($0.8$) and DADA ($0.3$) papers is reported by `06_compare_degree_bias_method.py`.
 
-### Bootstrap 95% Confidence Intervals (key metrics)
+## Networks and disease sets
 
-| Set | Method | AUC | MRR | R@20 |
-|-----|--------|-----|-----|------|
-| HMDB+CTD | PROFANCY | 0.810 [0.797, 0.824] | 0.011 [0.010, 0.013] | 0.045 [0.032, 0.059] |
-| | CTQW-PRO | 0.820 [0.804, 0.836] | 0.060 [0.046, 0.074] | 0.192 [0.155, 0.227] |
-| MarkerDB | PROFANCY | 0.864 [0.832, 0.900] | 0.018 [0.014, 0.023] | 0.090 [0.040, 0.154] |
-| | CTQW-PRO | 0.884 [0.857, 0.910] | 0.085 [0.057, 0.123] | 0.265 [0.193, 0.340] |
-| SMPDB | PROFANCY | 0.945 [0.942, 0.949] | 0.027 [0.026, 0.029] | 0.179 [0.157, 0.200] |
-| | CTQW-PRO | 0.957 [0.952, 0.961] | 0.217 [0.197, 0.238] | 0.543 [0.516, 0.571] |
+| Network | $G_{cc}$ | $G_{pro}$ |
+|---|---|---|
+| Recon3D | 2,788 nodes, 22,439 edges | 2,894 nodes (106 pathway nodes), 31,360 edges |
+| KEGG (human metabolism) | 3,048 nodes, 18,854 edges | 3,127 nodes (79 pathway nodes), 24,663 edges |
 
-### Additional findings
-- CTQW-PRO advantage over PROFANCY grows with metabolite dispersion (Spearman r = +0.53, p < 0.001)
-- On high-dispersion diseases: PROFANCY R@20 ≈ 0.007 vs CTQW-PRO R@20 = 0.115 (**16× improvement**)
-- Optimal time parameter t ≈ 0.09–0.10; high-dispersion diseases benefit from t ≈ 0.05
-- Pathway-augmented graph G_pro substantially outperforms plain G_cc for all methods
+Three disease–metabolite sets are built: **HMDB+CTD**, **MarkerDB**, and **SMPDB** (disease pathways). HMDB and SMPDB entries are restricted to metabolites with HMDB status *detected* and/or *quantified*. Currency metabolites are removed from all three sets, and generic disease terms (e.g. "cancer", "inflammation") from HMDB+CTD and MarkerDB. Diseases with fewer than 8 metabolites mapped to the network are discarded. SMPDB disease names are deduplicated in three steps (normalized name, sorted tokens, token Jaccard ≥ 0.85).
 
-## Quickstart
+## Evaluation
 
-Click **Open in Colab** above, then run **Cell 0** to clone the repo and install dependencies. Data files must be available in Google Drive (see below).
+* Leave-one-out per disease: each known metabolite is held out in turn, and the remaining ones are used as seeds. Seeds are excluded from the candidate list.
+* Metrics: AUC, MRR, and Recall@k (k = 5, 10, 20), averaged per disease.
+* Statistics: two-sided Wilcoxon signed-rank test paired by disease, with Bonferroni correction over the five metrics within each comparison. Bootstrap 95% confidence intervals use 1,000 resamples (seed 42).
 
 ## Data
 
-Place the following files in Google Drive under `MyDrive/CTQW for metabolites/`:
+Download the following files and place them in Google Drive under `MyDrive/CTQW for metabolites/`. Alternatively, set `BASE_DIR` in `src/config.py` to another folder.
 
 | File | Source |
-|------|--------|
+|---|---|
 | `Recon3D.json` | [BiGG Models](http://bigg.ucsd.edu/models/Recon3D) |
-| `hmdb_metabolites.zip` | [HMDB](https://hmdb.ca/downloads) |
-| `CTD_chemicals_diseases.csv.gz` | [CTD](http://ctdbase.org/downloads/) |
+| `hmdb_metabolites.zip` | [HMDB](https://hmdb.ca/downloads) (All Metabolites, XML) |
+| `CTD_chemicals_diseases.csv.gz` | [CTD](https://ctdbase.org/downloads/) |
 | `all_chemicals.xml` | [MarkerDB](https://markerdb.ca/downloads) |
 | `smpdb_pathways.csv.zip` | [SMPDB](https://smpdb.ca/downloads) |
 | `smpdb_metabolites.csv.zip` | [SMPDB](https://smpdb.ca/downloads) |
 
-## Project Structure
+**KEGG.** KEGG data are not downloaded manually. On the first run, `src/kegg_graph.py` retrieves them from the [KEGG REST API](https://www.kegg.jp/kegg/rest/keggapi.html) and caches them in `results/cache/`. It collects the human metabolic pathways of BRITE `br08901`, excluding global/overview and chemical-structure maps, together with their reactions and reaction equations. Because KEGG is updated regularly, a later retrieval may produce a slightly different network. The results in the manuscript use data retrieved on **YYYY-MM-DD** (86 pathways; 4,316 of 4,496 reactions with a parsable equation).
 
-```
-├── main_notebook.ipynb         # Main notebook (run this)
-├── src/
-│   ├── config.py               # Paths & hyperparameters
-│   ├── graph.py                # Recon3D parsing, G_pro construction
-│   ├── methods.py              # PROFANCY, CTQW-PRO, Driven CTQW-PRO
-│   ├── evaluation.py           # LOO eval, metrics
-│   ├── eval_sets.py            # HMDB+CTD, MarkerDB, SMPDB loaders
-│   └── utils.py
-└── experiments/
-    ├── 01_main_results.py      # Main LOO evaluation (Tables 1–3 + Wilcoxon)
-    ├── 02_ablation_graph.py    # Graph ablation (cofactor filtering, t-sweep)
-    ├── 03_negative_results.py  # Chiral walk, geometric t, self-loop leakage
-    └── 04_figures.py           # Publication figures
-```
+## Usage
 
-## Requirements
+### Google Colab (recommended)
+
+Open one of the notebooks via the badges above and run all cells. Each notebook:
+
+1. clones this repository;
+2. mounts Google Drive;
+3. runs the experiment scripts for one network.
+
+### Local
 
 ```bash
-pip install torch scikit-learn networkx numpy pandas scipy tqdm
+git clone https://github.com/TruongDuyLongPTIT/CTQW-PRO-Quantum-Walk-Based-Metabolite-Disease-Prioritization.git
+cd CTQW-PRO-Quantum-Walk-Based-Metabolite-Disease-Prioritization
+pip install numpy scipy pandas networkx scikit-learn tqdm
+# set BASE_DIR in src/config.py, then for example:
+python experiments/01_main_results.py
 ```
 
-## Methods
+Parsed data and eigendecompositions are cached in `results/cache/`, so only the first run parses HMDB (several minutes). Each script takes from a few minutes to about an hour on a Colab CPU.
 
-**CTQW-PRO** evolves an initial quantum state $|\psi_0\rangle$ (uniform superposition of seed metabolites) over a bipartite graph $G_\text{pro}$ combining Recon3D with 106 pathway nodes:
+## Repository structure
 
-$$|\psi(t)\rangle = e^{-iA_\text{pro}\, t}|\psi_0\rangle, \quad t = 0.1$$
+```
+├── main_notebook_recon3d.ipynb   # runs all experiments on Recon3D
+├── main_notebook_kegg.ipynb      # runs all experiments on KEGG
+├── src/
+│   ├── config.py                 # paths, hyperparameters, currency metabolite lists
+│   ├── utils.py                  # ID and name normalization
+│   ├── graph.py                  # Recon3D parsing, G_cc / G_pro construction, eigendecomposition
+│   ├── kegg_graph.py             # KEGG retrieval (REST API) and HMDB-KEGG mapping
+│   ├── eval_sets.py              # HMDB+CTD, MarkerDB, SMPDB disease sets
+│   ├── methods.py                # all ranking methods
+│   └── evaluation.py             # leave-one-out, metrics, Wilcoxon, bootstrap, win counts
+└── experiments/
+    ├── 01_main_results[_kegg].py               # RWR vs CTQW (G_cc); PROFANCY vs CTQW-PRO (G_pro); NH-CTQW-PRO
+    ├── 02_ablation_graph[_kegg].py             # effect of removing currency metabolites from G_pro
+    ├── 04_biological_interpretability.py       # top-20 predictions for four inborn errors of metabolism (Recon3D, SMPDB)
+    ├── 05_supplementary[_kegg].py              # gamma grid search (NH-CTQW-PRO); t grid search (CTQW-PRO, Recon3D)
+    └── 06_compare_degree_bias_method[_kegg].py # comparison with degree-bias mitigation methods; degree / coreness of currency metabolites
+```
 
-Metabolite scores are the measurement probabilities $|\langle v|\psi(t)\rangle|^2$.
-
-**Driven CTQW-PRO** periodically reinforces the walker toward seed nodes:
-
-$$|\psi_{k+1}\rangle \propto (1-\alpha)\,e^{-iA_\text{pro}\,\delta t}|\psi_k\rangle + \alpha\,|\psi_0\rangle, \quad \alpha=0.5,\ \delta t=0.1$$
+Scripts suffixed `_kegg` run the same experiment on the KEGG network.
 
 ## Citation
 
+If you use this code, please cite:
+
 ```bibtex
-@article{ctqwpro2025,
-  title   = {CTQW-PRO: Quantum Walk-Based Metabolite–Disease Prioritization},
+@article{ctqwpro,
+  title   = {CTQW-PRO: Quantum Walk-Based Metabolite--Disease Prioritization},
   author  = {...},
   journal = {...},
-  year    = {2026}
+  year    = {...}
 }
 ```
 
-## Related Work
+## References
 
-**Quantum walk methods:**
-- Saarinen et al. (2024). [Disease gene prioritization with quantum walks.](https://academic.oup.com/bioinformatics/article/40/8/btae513/7738783) *Bioinformatics* 40(8): btae513.
-- Dubovitskii et al. (2025). [On Quantum Random Walks in Biomolecular Networks.](https://arxiv.org/abs/2506.06514) *arXiv:* 2506.06514.
+* Köhler S, et al. Walking the interactome for prioritization of candidate disease genes. *Am J Hum Genet.* 2008;82(4):949–958. [doi:10.1016/j.ajhg.2008.02.013](https://doi.org/10.1016/j.ajhg.2008.02.013)
+* Shang D, et al. Prioritizing candidate disease metabolites based on global functional relationships between metabolites in the context of metabolic pathways. *PLoS ONE.* 2014;9(8):e104934. [doi:10.1371/journal.pone.0104934](https://doi.org/10.1371/journal.pone.0104934)
+* Erten S, et al. DADA: degree-aware algorithms for network-based disease gene prioritization. *BioData Min.* 2011;4:19. [doi:10.1186/1756-0381-4-19](https://doi.org/10.1186/1756-0381-4-19)
+* Barel G, Herwig R. NetCore: a network propagation approach using node coreness. *Nucleic Acids Res.* 2020;48(17):e98. [doi:10.1093/nar/gkaa639](https://doi.org/10.1093/nar/gkaa639)
+* Frainay C, et al. MetaboRank: network-based recommendation system to interpret and enrich metabolomics results. *Bioinformatics.* 2019;35(2):274–283. [doi:10.1093/bioinformatics/bty577](https://doi.org/10.1093/bioinformatics/bty577)
+* Boyd SS, Slawson C, Thompson JA. AMEND 2.0: module identification and multi-omic data integration with multiplex-heterogeneous graphs. *BMC Bioinformatics.* 2025;26:39. [doi:10.1186/s12859-025-06063-x](https://doi.org/10.1186/s12859-025-06063-x)
+* Brunk E, et al. Recon3D: a resource enabling a three-dimensional view of gene variation in human metabolism. *Nat Biotechnol.* 2018;36(3):272–281. [doi:10.1038/nbt.4072](https://doi.org/10.1038/nbt.4072)
+* Kanehisa M, et al. KEGG: biological systems database as a model of the real world. *Nucleic Acids Res.* 2025;53(D1):D672–D677. [doi:10.1093/nar/gkae909](https://doi.org/10.1093/nar/gkae909)
 
-**Metabolite–disease prioritization (baselines & related):**
-- Shang et al. (2014). [Prioritizing Candidate Disease Metabolites Based on Global Functional Relationships between Metabolites in the Context of Metabolic Pathways.](https://doi.org/10.1371/journal.pone.0104934) *PLoS ONE* 9(8): e104934. *(PROFANCY)*
-- Yao et al. (2015). [Global Prioritization of Disease Candidate Metabolites Based on a Multi-omics Composite Network.](https://doi.org/10.1038/srep17201) *Scientific Reports* 5: 17201. *(MetPriCNet)*
-- Ma Y & Ma Y (2022). [Hypergraph-based logistic matrix factorization for metabolite–disease interaction prediction.](https://doi.org/10.1093/bioinformatics/btab652) *Bioinformatics* 38(2): 435–443. *(HGLMF)*
-- Zhao et al. (2023). [Metabolite-disease interaction prediction based on logistic matrix factorization and local neighborhood constraints.](https://doi.org/10.3389/fpsyt.2023.1149947) *Frontiers in Psychiatry* 14: 1149947.
-- Lu et al. (2025). [Enhanced metabolite-disease associations prediction via Neighborhood Aggregation Graph Transformer with Kolmogorov–Arnold Networks.](https://doi.org/10.1016/j.jocs.2025.102629) *Journal of Computational Science* 90: 102629. *(AGKphormer)*
+## License
+
+This project is released under the MIT License (see [LICENSE](LICENSE)).
