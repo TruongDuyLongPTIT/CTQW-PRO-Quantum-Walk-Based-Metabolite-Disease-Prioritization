@@ -1,0 +1,106 @@
+import sys, time
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+from config import T_CTQW, NH_GAMMA, RECON3D_CURRENCY_METABOLITE
+from graph import (parse_recon3d, build_gcc, build_gpro, build_hmdb_to_recon_initial, augment_hmdb_to_recon)
+from eval_sets import (parse_hmdb, build_hmdb_lookups, build_CURRENCY_METABOLITE_set, build_eval_set3)
+from methods import make_nh_pro
+
+# --------SELECTED DISEASES-----------
+DISEASES = {
+    "LNS":  "Lesch-Nyhan Syndrome (LNS)",
+    "AKU":  "Alkaptonuria",
+    "MSUD": "Maple Syrup Urine Disease",
+    "PKU":  "Phenylketonuria",
+}
+TOP_K = 20
+
+# -----------SETUP-------------------
+print('='*65)
+print('04 — Biological Interpretability Analysis')
+print('='*65)
+
+recon_data   = parse_recon3d()
+G_cc, _, N, node_idx, _, _ = build_gcc(recon_data)
+met_info     = recon_data['met_info']
+pathway_mets = recon_data['pathway_mets']
+
+(G_pro, pro_nodes, N_PRO, idx_pro, A_pro, deg_pro, _pro_src, _pro_dst) = build_gpro(G_cc, node_idx, pathway_mets)
+
+hmdb_data        = parse_hmdb()
+hmdb_metabolites = hmdb_data['metabolites']
+hmdb_lookups     = build_hmdb_lookups(hmdb_metabolites)
+hmdb_to_recon    = build_hmdb_to_recon_initial(met_info, node_idx)
+augment_hmdb_to_recon(
+    hmdb_to_recon, met_info, node_idx,
+    hmdb_lookups['ik_to_id'], hmdb_lookups['ikshort_to_id'],
+    hmdb_lookups['name_to_id'], hmdb_lookups['name_aggr_to_id'])
+CURRENCY_METABOLITE = build_CURRENCY_METABOLITE_set(hmdb_metabolites)
+eval_set3 = build_eval_set3(hmdb_metabolites, hmdb_to_recon, node_idx, CURRENCY_METABOLITE)
+
+# Reverse map: recon_id → HMDB IDs
+recon_to_hmdb = {}
+for hmdb_id, recon_id in hmdb_to_recon.items():
+    recon_to_hmdb.setdefault(recon_id, []).append(hmdb_id)
+
+# Currency metabolite node indices in G_cc (exclude from predictions)
+cm_set = set(RECON3D_CURRENCY_METABOLITE)
+cm_gcc_idx = set()
+for nd, i in node_idx.items():
+    nd_b = nd.replace('_c','').replace('_m','').replace('_e','').replace('_x','')
+    if nd in cm_set or nd_b in cm_set:
+        cm_gcc_idx.add(i)
+
+# -------------BUILD NH-CTQW-PRO------------------
+print(f'Building NH-CTQW-PRO (γ={NH_GAMMA}, t={T_CTQW})...', end=' ', flush=True)
+t0 = time.time()
+run_nh = make_nh_pro(
+    A_pro, idx_pro, N, N_PRO, _pro_src, _pro_dst,
+    RECON3D_CURRENCY_METABOLITE, pro_nodes, NH_GAMMA, T_CTQW)
+print(f'{time.time()-t0:.1f}s')
+
+# ------------PREDICT PER DISEASE-------------
+for disease_key, disease_name in DISEASES.items():
+    known_mets  = eval_set3[disease_name]
+    valid_seeds = [m for m in known_mets if m in node_idx]
+    seed_idx    = {node_idx[s] for s in valid_seeds}
+
+    print(f'\n{"="*65}')
+    print(f'DISEASE: {disease_name}  [{disease_key}]')
+    print(f'{"="*65}')
+
+    # ------------------ Seeds -----------------
+    print(f'\nSeeds (n={len(valid_seeds)}) — known disease metabolites:')
+    print(f"  {'#':>3}  {'Name':<50}  {'HMDB':>13}")
+    print('  ' + '-'*70)
+    for i, s in enumerate(valid_seeds, 1):
+        sname = met_info.get(s, {}).get('name', s)
+        hmdb  = recon_to_hmdb.get(s, [''])[0]
+        print(f"  {i:>3}. {sname:<50}  {hmdb:>13}")
+
+    # ----------Predict -------------
+    scores = run_nh(valid_seeds)
+
+    candidates = []
+    for nd, gcc_idx in node_idx.items():
+        if gcc_idx in seed_idx:   continue  # mask seeds
+        if gcc_idx in cm_gcc_idx: continue  # exclude currency metabolites
+        if scores[gcc_idx] < 1e-10: continue
+        name  = met_info.get(nd, {}).get('name', nd)
+        hmdb  = recon_to_hmdb.get(nd, [''])[0]
+        candidates.append({
+            'recon_id': nd,
+            'name':     name,
+            'hmdb_id':  hmdb,
+            'score':    float(scores[gcc_idx]),
+        })
+    candidates.sort(key=lambda x: -x['score'])
+    top = candidates[:TOP_K]
+
+    # ----------- Print predictions -----------------
+    print(f'\nTop-{TOP_K} predictions (NH-CTQW-PRO, full-seed mode):')
+    print(f"  {'Rank':>4}  {'Name':<50}  {'HMDB':>13}  {'Score':>10}")
+    print('  ' + '-'*80)
+
+    for i, c in enumerate(top, 1):
+        print(f"  {i:>4}. {c['name']:<50}  {c['hmdb_id']:>13}  {c['score']:>10.6f}")
