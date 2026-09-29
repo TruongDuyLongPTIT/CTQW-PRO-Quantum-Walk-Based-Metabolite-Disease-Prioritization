@@ -98,18 +98,35 @@ def build_gcc(recon_data):
     ccs = sorted(nx.connected_components(G), key=len, reverse=True)
     G_cc        = G.subgraph(ccs[0]).copy()
     graph_nodes = sorted(G_cc.nodes())
-    N           = len(graph_nodes)    
+    N           = len(graph_nodes)
     node_idx    = {nd: i for i, nd in enumerate(graph_nodes)}
     A_cc        = nx.to_numpy_array(G_cc, nodelist=graph_nodes)
     degrees     = A_cc.sum(axis=1)
     return G_cc, graph_nodes, N, node_idx, A_cc, degrees
 
 
+# ── HMDB → Recon3D node mapping patch error
+RECON3D_HMDB_PATCH = {
+    'h2o':    ({'HMDB0001039'}, set()),
+    'oh1':    ({'HMDB0002111'}, set()),
+    'asp__L': ({'HMDB0062186', 'HMDB0062501'}, set()),
+    'lys__L': ({'HMDB0003405'}, set()),
+    'CE2176': ({'HMDB0060747'}, {'HMDB0001434'}),
+}
+# Aggressive name matches verified to be wrong: (node, HMDB id).
+AGGR_NAME_BLOCKLIST = {('HC02121', 'HMDB0013055')}   # S-(hydroxymethyl)GSH != PGD2-GSH
+
+
+def _patched_hmdb_ids(base_id, hmdb_ids):
+    remove, add = RECON3D_HMDB_PATCH.get(base_id, (set(), set()))
+    return [h for h in hmdb_ids if h not in remove] + sorted(add)
+
+
 def build_hmdb_to_recon_initial(met_info, node_idx):
     hmdb_to_recon = {}
     for base_id, info in met_info.items():
         if base_id not in node_idx: continue
-        for hid in info['hmdb_ids']:
+        for hid in _patched_hmdb_ids(base_id, info['hmdb_ids']):   # FIX 1: patched annotations
             hmdb_to_recon[hid] = base_id
             digits = hid[4:].lstrip('0') if hid.startswith('HMDB') else ''
             if digits:
@@ -138,11 +155,18 @@ def augment_hmdb_to_recon(hmdb_to_recon, met_info, node_idx,
                 mapped.add(base_id)
                 n_aug_ik += 1
                 continue
-        # Try name matching
+        # Try exact name matching (unchanged)
         nm = normalize_name(info['name'])
-        hm = hmdb_name_to_id.get(nm) or hmdb_name_aggr_to_id.get(
-             normalize_chem_aggressive(info['name']))
+        hm = hmdb_name_to_id.get(nm)
         if hm:
+            hmdb_to_recon[hm] = base_id
+            mapped.add(base_id)
+            n_aug_nm += 1
+            continue
+        # FIX 2: aggressive name matching may not overwrite an HMDB id that is
+        # already mapped, and verified wrong matches are blocked.
+        hm = hmdb_name_aggr_to_id.get(normalize_chem_aggressive(info['name']))
+        if hm and hm not in hmdb_to_recon and (base_id, hm) not in AGGR_NAME_BLOCKLIST:
             hmdb_to_recon[hm] = base_id
             mapped.add(base_id)
             n_aug_nm += 1
